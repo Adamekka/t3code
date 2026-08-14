@@ -366,6 +366,10 @@ export function projectActivityPayload(
     data.tool === "read" ||
     data.kind === "read" ||
     activity.summary.trim().toLowerCase() === "read";
+  const isGlobActivity =
+    data.tool === "glob" ||
+    data.kind === "glob" ||
+    activity.summary.trim().toLowerCase() === "glob";
   const readOutput =
     isReadActivity && typeof payload.detail === "string"
       ? parseOpenCodeReadOutput(payload.detail)
@@ -373,6 +377,13 @@ export function projectActivityPayload(
   const readInputPath =
     isReadActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const readPath = readOutput?.path ?? readInputPath;
+  const globPattern = isGlobActivity
+    ? typeof data.pattern === "string"
+      ? data.pattern.trim()
+      : typeof input?.pattern === "string"
+        ? input.pattern.trim()
+        : ""
+    : "";
   const item = projectCommandData(data);
   if (item) {
     projectedData.item = item;
@@ -398,8 +409,13 @@ export function projectActivityPayload(
   }
   if (isReadActivity) {
     projectedData.kind = "read";
+  } else if (isGlobActivity) {
+    projectedData.kind = "glob";
   } else if ("kind" in data) {
     projectedData.kind = data.kind;
+  }
+  if (globPattern) {
+    projectedData.pattern = globPattern;
   }
 
   const rawOutput = projectRawOutput(data.rawOutput) ?? projectAcpContent(data.content);
