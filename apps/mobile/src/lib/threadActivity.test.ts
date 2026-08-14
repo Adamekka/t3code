@@ -445,6 +445,44 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
 
+  it("shows Read paths while expanding only the file contents", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-read"),
+      projectId: ProjectId.make("project-1"),
+      title: "Read file",
+      activities: [
+        makeActivity({
+          id: EventId.make("read-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "read",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            detail: "1: # Instructions\n2: Keep it small.",
+            data: {
+              kind: "read",
+              files: [{ path: "/workspace/AGENTS.md" }],
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Read",
+      detail: "/workspace/AGENTS.md",
+      icon: "eye",
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe("1: # Instructions\n2: Keep it small.");
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>
