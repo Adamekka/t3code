@@ -1424,7 +1424,7 @@ describe("deriveMessagesTimelineRows", () => {
       hiddenCount: 3,
       expanded: false,
       onlyToolEntries: true,
-      summary: "Used 3 tools",
+      summary: "Read 1 file and used 2 tools",
     });
     expect(expandedRows.map((row) => row.id)).toEqual([
       "work-toggle:work-entry-1",

@@ -315,4 +315,30 @@ describe("projectActivityPayload", () => {
       files: [{ path: "/workspace/opencode.json" }],
     });
   });
+
+  it("retains the pattern from stored OpenCode Glob input", () => {
+    const projected = projectActivityPayload({
+      ...activity({
+        itemType: "dynamic_tool_call",
+        detail: "/workspace/src/index.ts\n/workspace/src/server.ts",
+        data: {
+          tool: "glob",
+          state: {
+            status: "completed",
+            input: { pattern: "**/*.ts" },
+          },
+        },
+      }),
+      summary: "Glob",
+    });
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "/workspace/src/index.ts\n/workspace/src/server.ts",
+    );
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "glob",
+      pattern: "**/*.ts",
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
 });
