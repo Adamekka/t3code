@@ -592,6 +592,45 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toBe("1: # Instructions\n2: Keep it small.");
   });
 
+  it("shows Glob patterns while expanding matched paths", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-glob"),
+      projectId: ProjectId.make("project-1"),
+      title: "Glob files",
+      activities: [
+        makeActivity({
+          id: EventId.make("glob-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "glob",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            detail: "/workspace/skills/js-ts/SKILL.md\n/workspace/skills/swift/SKILL.md",
+            data: {
+              kind: "glob",
+              pattern: "**/SKILL.md",
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Glob",
+      detail: "**/SKILL.md",
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe(
+      "/workspace/skills/js-ts/SKILL.md\n/workspace/skills/swift/SKILL.md",
+    );
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>
