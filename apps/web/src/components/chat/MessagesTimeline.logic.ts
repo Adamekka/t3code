@@ -347,6 +347,10 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
 /** Immediate, provider-neutral fallback while generated tool summaries are disabled or unavailable. */
 export function summarizeToolGroup(entries: ReadonlyArray<WorkLogEntry>): string {
   const summaryEntries = omitSupersededLifecycleMarkers(entries, (entry) => entry);
+  if (summaryEntries.length === 1) {
+    const globPattern = summaryEntries[0]?.globPattern?.trim();
+    if (globPattern) return `Glob ${globPattern}`;
+  }
   const groupedEntries = new Map<ToolGroupAction, WorkLogEntry[]>();
   for (const entry of summaryEntries) {
     const action = toolGroupAction(entry);
