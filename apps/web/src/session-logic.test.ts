@@ -2105,6 +2105,26 @@ describe("deriveWorkLogEntries quiet-timeline guarantee", () => {
     expect(entries).toHaveLength(1);
   });
 
+  it("retains projected Glob patterns for compact row previews", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        kind: "tool.completed",
+        summary: "Glob",
+        payload: {
+          itemType: "dynamic_tool_call",
+          detail: "/workspace/src/index.ts",
+          data: { kind: "glob", pattern: "**/*.ts" },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      label: "Glob",
+      globPattern: "**/*.ts",
+      detail: "/workspace/src/index.ts",
+    });
+  });
+
   it("folds timelineBypass agent rows into one CTA (Codex children, workflow members)", () => {
     // Codex children carry their parent's spawn turn (spawnTurnId stamping),
     // which is what batches a fleet into one CTA.

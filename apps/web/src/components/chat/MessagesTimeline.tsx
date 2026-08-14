@@ -2159,11 +2159,19 @@ function workEntryIsRead(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
 }
 
+function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
+}
+
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle" | "detail" | "command" | "changedFiles">,
+  workEntry: Pick<
+    TimelineWorkEntry,
+    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "changedFiles"
+  >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
+  if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntryIsRead(workEntry)) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
