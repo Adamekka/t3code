@@ -1071,6 +1071,33 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("contents without a recoverable path");
   });
 
+  it("shows Glob patterns without matched paths in the compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-glob",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-glob",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "glob",
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+              globPattern: "**/SKILL.md",
+              detail: "/workspace/skills/js-ts/SKILL.md\n/workspace/skills/swift/SKILL.md",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Glob **/SKILL.md");
+    expect(markup).not.toContain("/workspace/skills/js-ts/SKILL.md");
+  });
+
   it("summarizes changed files in one line", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

@@ -1345,7 +1345,7 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each([
-    ["tools", "tool", "Used 3 tools"],
+    ["tools", "tool", "Read 1 file and used 2 tools"],
     ["tools and status updates", "info", "Used 2 tools and received 1 update"],
   ] as const)("expands %s through the same activity group", (_, middleTone, summary) => {
     const timelineEntries = [
