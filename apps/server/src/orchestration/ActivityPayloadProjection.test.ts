@@ -285,4 +285,93 @@ describe("projectActivityPayload", () => {
     expect((projected.payload as Record<string, unknown>).detail).toBe("package.json\nsrc");
     expect((projected.payload as Record<string, unknown>).data).toEqual({ command: "ls" });
   });
+
+  it("normalizes stored OpenCode read output and retains its path", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          "<path>/workspace/AGENTS.md</path>\n<type>file</type>\n<content>\n1: # Instructions\n2: Keep it small.\n</content>",
+        data: {
+          tool: "read",
+          state: {
+            status: "completed",
+            input: { filePath: "/workspace/AGENTS.md" },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "1: # Instructions\n2: Keep it small.",
+    );
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "read",
+      files: [{ path: "/workspace/AGENTS.md" }],
+    });
+  });
+
+  it("preserves malformed OpenCode read output", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail: "<content>not a complete read envelope</content>",
+        data: { tool: "read" },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "<content>not a complete read envelope</content>",
+    );
+  });
+
+  it("normalizes stored OpenCode read output truncated before its closing tag", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          "<path>/workspace/large.ts</path>\n<type>file</type>\n<content>\n1: export const value = 'truncated...",
+        data: { tool: "read" },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "1: export const value = 'truncated...",
+    );
+  });
+
+  it("normalizes OpenCode directory listings", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          "<path>/workspace/src</path>\n<type>directory</type>\n<content>\nindex.ts\nserver.ts\n</content>\n\n",
+        data: { tool: "read" },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe("index.ts\nserver.ts");
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "read",
+      files: [{ path: "/workspace/src" }],
+    });
+  });
+
+  it("normalizes cached historical Read rows after tool metadata was projected away", () => {
+    const projected = projectActivityPayload({
+      ...activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          '<path>/workspace/opencode.json</path>\n<type>file</type>\n<content>\n1: {\n2:   "plugin": []\n</content>',
+        data: {},
+      }),
+      summary: "Read",
+    });
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe('1: {\n2:   "plugin": []');
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "read",
+      files: [{ path: "/workspace/opencode.json" }],
+    });
+  });
 });

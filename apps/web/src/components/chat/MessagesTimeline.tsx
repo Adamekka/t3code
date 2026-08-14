@@ -2464,6 +2464,10 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   };
 }
 
+function workEntryIsRead(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
+}
+
 function workEntryRawCommand(
   workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
 ): string | null {
@@ -2491,7 +2495,7 @@ function buildToolCallExpandedBody(
   if (workEntry.detail?.trim()) {
     blocks.push(workEntry.detail.trim());
   }
-  const changedFiles = workEntry.changedFiles ?? [];
+  const changedFiles = workEntryIsRead(workEntry) ? [] : (workEntry.changedFiles ?? []);
   if (changedFiles.length > 0) {
     blocks.push(
       changedFiles
