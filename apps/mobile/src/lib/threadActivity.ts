@@ -734,6 +734,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  if (workEntryIsRead(entry)) return "eye";
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -762,7 +763,7 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
   }
   appendUniqueBlock(entry.rawCommand ?? entry.command);
   appendUniqueBlock(entry.detail);
-  if ((entry.changedFiles?.length ?? 0) > 0) {
+  if (!workEntryIsRead(entry) && (entry.changedFiles?.length ?? 0) > 0) {
     appendUniqueBlock(entry.changedFiles!.join("\n"));
   }
 
@@ -790,10 +791,17 @@ function memoizeValue<T>(build: () => T): () => T {
   };
 }
 
+function workEntryIsRead(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
+}
+
 function workEntryPreview(
-  workEntry: Pick<WorkLogEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<WorkLogEntry, "label" | "toolTitle" | "detail" | "command" | "changedFiles">,
 ): string | null {
   if (workEntry.command) return workEntry.command;
+  if (workEntryIsRead(workEntry)) {
+    return workEntry.changedFiles?.[0] ?? null;
+  }
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
