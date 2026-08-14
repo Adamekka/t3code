@@ -74,6 +74,7 @@ export interface WorkLogEntry {
   detail?: string;
   command?: string;
   rawCommand?: string;
+  globPattern?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -919,6 +920,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const globPattern = asTrimmedString(asRecord(payload?.data)?.pattern);
   const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
@@ -968,6 +970,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
+  }
+  if (globPattern) {
+    entry.globPattern = globPattern;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
