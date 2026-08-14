@@ -4,6 +4,7 @@ import type {
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { parseOpenCodeReadOutput } from "../provider/OpenCodeToolOutput.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -382,6 +383,19 @@ export function projectActivityPayload(
   }
 
   const projectedData: Record<string, unknown> = {};
+  const state = asRecord(data.state);
+  const input = asRecord(state?.input);
+  const isReadActivity =
+    data.tool === "read" ||
+    data.kind === "read" ||
+    activity.summary.trim().toLowerCase() === "read";
+  const readOutput =
+    isReadActivity && typeof payload.detail === "string"
+      ? parseOpenCodeReadOutput(payload.detail)
+      : null;
+  const readInputPath =
+    isReadActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
+  const readPath = readOutput?.path ?? readInputPath;
   const item = projectCommandData(data);
   if (item) {
     projectedData.item = item;
@@ -396,7 +410,11 @@ export function projectActivityPayload(
   }
 
   const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0);
+  const seenChangedFiles = new Set<string>();
+  if (readPath) {
+    pushChangedFile(changedFiles, seenChangedFiles, readPath);
+  }
+  collectChangedFiles(data, changedFiles, seenChangedFiles, 0);
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
     projectedData.files = changedFiles.map((path) => ({ path }));
@@ -405,7 +423,9 @@ export function projectActivityPayload(
   if ("toolCallId" in data) {
     projectedData.toolCallId = data.toolCallId;
   }
-  if ("kind" in data) {
+  if (isReadActivity) {
+    projectedData.kind = "read";
+  } else if ("kind" in data) {
     projectedData.kind = data.kind;
   }
   if ("toolName" in data) {
@@ -420,10 +440,19 @@ export function projectActivityPayload(
     projectedData.rawOutput = rawOutput;
   }
 
+  const normalizedPayload = { ...projectedPayload };
+  if (readOutput) {
+    if (readOutput.content.trim().length > 0) {
+      normalizedPayload.detail = readOutput.content;
+    } else {
+      delete normalizedPayload.detail;
+    }
+  }
+
   return {
     ...activity,
     payload: {
-      ...projectedPayload,
+      ...normalizedPayload,
       data: projectedData,
     },
   };
