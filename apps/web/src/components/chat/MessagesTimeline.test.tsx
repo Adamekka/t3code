@@ -930,6 +930,62 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Context compacted");
   });
 
+  it("shows Read paths without leaking provider output markup", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-read",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-read",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "read",
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+              detail: "1: # Instructions\n2: Keep it small.",
+              changedFiles: ["/workspace/AGENTS.md"],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Read 1 file");
+    expect(markup).toContain("lucide-eye");
+    expect(markup).not.toContain("&lt;path&gt;");
+    expect(markup).not.toContain("1: # Instructions");
+  });
+
+  it("keeps pathless Read contents out of the compact preview", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-read",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-read",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "read",
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+              detail: "1: contents without a recoverable path",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Read 1 file");
+    expect(markup).toContain("lucide-eye");
+    expect(markup).not.toContain("contents without a recoverable path");
+  });
+
   it("summarizes changed files in one line", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
