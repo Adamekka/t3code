@@ -20,6 +20,7 @@ export interface WorkLogPresentationEntry {
   readonly tone: "thinking" | "tool" | "info" | "error";
   readonly command?: string;
   readonly detail?: string;
+  readonly globPattern?: string;
   readonly changedFiles?: ReadonlyArray<string>;
   readonly itemType?: ToolLifecycleItemType;
   readonly requestKind?: string;
@@ -175,6 +176,10 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
 
 export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEntry>): string {
   const summaryEntries = omitSupersededLifecycleMarkers(entries, (entry) => entry);
+  if (summaryEntries.length === 1) {
+    const globPattern = summaryEntries[0]?.globPattern?.trim();
+    if (globPattern) return `Glob ${globPattern}`;
+  }
   const groupedEntries = new Map<ToolGroupAction, WorkLogPresentationEntry[]>();
   for (const entry of summaryEntries) {
     const action = toolGroupAction(entry);
