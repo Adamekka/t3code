@@ -48,6 +48,10 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command) return entry.command;
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  if (heading.toLowerCase() === "glob") {
+    return entry.globPattern ?? `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+  }
   if (entry.detail) return entry.detail;
   const [firstPath] = entry.changedFiles ?? [];
   if (firstPath) {
@@ -56,7 +60,6 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
       ? path
       : `${path} +${entry.changedFiles!.length - 1} more`;
   }
-  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
   return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
 }
 
