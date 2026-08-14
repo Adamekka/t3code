@@ -69,7 +69,8 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
     (entry.itemType === "dynamic_tool_call" &&
-      entry.toolTitle?.trim().toLowerCase() === "read file")
+      entry.toolTitle?.trim().toLowerCase() === "read file") ||
+    normalizeCompactToolLabel(entry.toolTitle ?? entry.label).toLowerCase() === "read"
   ) {
     return "read";
   }
