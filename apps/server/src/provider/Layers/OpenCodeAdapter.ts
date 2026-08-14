@@ -2026,6 +2026,10 @@ export function makeOpenCodeAdapter(
             const title =
               part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool;
             const detail = detailFromToolPart(part);
+            const command =
+              part.tool === "bash" && typeof part.state.input.command === "string"
+                ? part.state.input.command
+                : undefined;
             const payload = {
               itemType,
               ...(part.state.status === "error"
@@ -2038,6 +2042,7 @@ export function makeOpenCodeAdapter(
               data: {
                 tool: part.tool,
                 state: part.state,
+                ...(command ? { command } : {}),
               },
             };
             const runtimeEvent: ProviderRuntimeEvent = {
