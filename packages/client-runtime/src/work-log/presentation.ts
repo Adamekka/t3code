@@ -21,6 +21,7 @@ export interface WorkLogPresentationEntry {
   readonly command?: string;
   readonly detail?: string;
   readonly viewedImagePath?: string;
+  readonly globPattern?: string;
   readonly changedFiles?: ReadonlyArray<string>;
   readonly itemType?: ToolLifecycleItemType;
   readonly requestKind?: string;
@@ -429,6 +430,10 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
 
 export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEntry>): string {
   const summaryEntries = omitSupersededLifecycleMarkers(entries, (entry) => entry);
+  if (summaryEntries.length === 1) {
+    const globPattern = summaryEntries[0]?.globPattern?.trim();
+    if (globPattern) return `Glob ${globPattern}`;
+  }
   const sources = new Map<string, ToolActivitySource>();
   const groupedEntries = new Map<ToolGroupAction, WorkLogPresentationEntry[]>();
   for (const entry of summaryEntries) {
