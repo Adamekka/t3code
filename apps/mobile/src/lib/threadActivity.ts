@@ -94,6 +94,7 @@ export interface WorkLogEntry {
   viewedImagePath?: string;
   command?: string;
   rawCommand?: string;
+  globPattern?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -395,6 +396,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const globPattern = asTrimmedString(asRecord(payload?.data)?.pattern);
   const title = extractToolTitle(payload);
   // task.updated included: terminal bypassed updates (Codex children's only
   // terminal signal) must carry task identity so they collapse per child
@@ -470,6 +472,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (commandPreview.rawCommand) {
     entry.rawCommand = commandPreview.rawCommand;
+  }
+  if (globPattern) {
+    entry.globPattern = globPattern;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -812,10 +817,18 @@ function workEntryIsRead(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): 
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
 }
 
+function workEntryIsGlob(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
+}
+
 function workEntryPreview(
-  workEntry: Pick<WorkLogEntry, "label" | "toolTitle" | "detail" | "command" | "changedFiles">,
+  workEntry: Pick<
+    WorkLogEntry,
+    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "changedFiles"
+  >,
 ): string | null {
   if (workEntry.command) return workEntry.command;
+  if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntryIsRead(workEntry)) {
     return workEntry.changedFiles?.[0] ?? null;
   }
