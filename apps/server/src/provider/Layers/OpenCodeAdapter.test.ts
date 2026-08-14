@@ -4763,6 +4763,72 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("normalizes OpenCode read output and retains its path", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-read-output");
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-read-output",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-read-output",
+              type: "tool",
+              callID: "call-read-output",
+              tool: "read",
+              state: {
+                status: "completed",
+                input: { filePath: "/workspace/AGENTS.md" },
+                output:
+                  "<path>/workspace/AGENTS.md</path>\n<type>file</type>\n<content>\n1: # Instructions\n2: Keep it small.\n</content>",
+                title: "Read AGENTS.md",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
+            },
+          },
+        },
+      ];
+      const eventFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId && event.type === "item.completed"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const [completed] = Array.from(
+        yield* Fiber.join(eventFiber).pipe(Effect.timeout("1 second")),
+      );
+      NodeAssert.equal(completed?.type, "item.completed");
+      if (completed?.type === "item.completed") {
+        NodeAssert.equal(completed.payload.detail, "1: # Instructions\n2: Keep it small.");
+        NodeAssert.deepEqual(completed.payload.data, {
+          tool: "read",
+          state: {
+            status: "completed",
+            input: { filePath: "/workspace/AGENTS.md" },
+            output:
+              "<path>/workspace/AGENTS.md</path>\n<type>file</type>\n<content>\n1: # Instructions\n2: Keep it small.\n</content>",
+            title: "Read AGENTS.md",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+          kind: "read",
+          files: [{ path: "/workspace/AGENTS.md" }],
+        });
+      }
+    }),
+  );
+
   it.effect("lets OpenCode own session title generation and emits title metadata updates", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

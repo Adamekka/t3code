@@ -41,6 +41,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
+import { parseOpenCodeReadOutput } from "../OpenCodeToolOutput.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
@@ -2025,11 +2026,21 @@ export function makeOpenCodeAdapter(
             const itemType = toToolLifecycleItemType(part.tool);
             const title =
               part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool;
-            const detail = detailFromToolPart(part);
+            const rawDetail = detailFromToolPart(part);
+            const readOutput =
+              part.tool === "read" && part.state.status === "completed"
+                ? parseOpenCodeReadOutput(part.state.output)
+                : null;
+            const detail = readOutput?.content ?? rawDetail;
             const command =
               part.tool === "bash" && typeof part.state.input.command === "string"
                 ? part.state.input.command
                 : undefined;
+            const readInputPath =
+              part.tool === "read" && typeof part.state.input.filePath === "string"
+                ? part.state.input.filePath.trim()
+                : "";
+            const readPath = readOutput?.path ?? readInputPath;
             const payload = {
               itemType,
               ...(part.state.status === "error"
@@ -2043,6 +2054,8 @@ export function makeOpenCodeAdapter(
                 tool: part.tool,
                 state: part.state,
                 ...(command ? { command } : {}),
+                ...(part.tool === "read" ? { kind: "read" } : {}),
+                ...(readPath ? { files: [{ path: readPath }] } : {}),
               },
             };
             const runtimeEvent: ProviderRuntimeEvent = {
