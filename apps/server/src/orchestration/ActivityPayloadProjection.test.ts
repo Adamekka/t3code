@@ -265,4 +265,24 @@ describe("projectActivityPayload", () => {
     const projected = projectActivityPayload(source);
     expect(projected.payload).toEqual(source.payload);
   });
+
+  it("recovers commands from stored OpenCode bash tool state", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        detail: "package.json\nsrc",
+        data: {
+          tool: "bash",
+          state: {
+            status: "completed",
+            input: { command: "ls" },
+            output: "package.json\nsrc",
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe("package.json\nsrc");
+    expect((projected.payload as Record<string, unknown>).data).toEqual({ command: "ls" });
+  });
 });
