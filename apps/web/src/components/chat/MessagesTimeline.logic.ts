@@ -856,64 +856,79 @@ export function deriveMessagesTimelineRows(input: {
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {
-        const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-        if (activeInProgressToolEntries.length > 0) {
-          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
+        const todoEntry =
+          visibleGroupedEntries.length === 1 && visibleGroupedEntries[0]?.todoItems !== undefined
+            ? visibleGroupedEntries[0]
+            : null;
+        if (todoEntry) {
           nextRows.push({
-            kind: "work-live",
-            id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
+            kind: "work",
+            id: timelineEntry.id,
             createdAt: timelineEntry.createdAt,
-            entry: latestActiveToolEntry,
-            groupedEntries: visibleGroupedEntries,
-            groupId,
-            expanded,
+            groupedEntries: [todoEntry],
+            isExpandedToolGroupEntry: false,
+            isLastExpandedToolGroupEntry: false,
           });
-          if (expanded) {
-            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-              nextRows.push({
-                kind: "work",
-                id: workEntry.id,
-                createdAt: workEntry.createdAt,
-                groupedEntries: [workEntry],
-                isExpandedToolGroupEntry: true,
-                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-              });
-            }
-          }
         } else {
-          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
-          const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
-          nextRows.push({
-            kind: "work-toggle",
-            id: `work-toggle:${timelineEntry.id}`,
-            createdAt: timelineEntry.createdAt,
-            groupId,
-            hiddenCount: visibleGroupedEntries.length,
-            expanded,
-            summary:
-              visibleGroupedEntries.length === 1 &&
-              !workLogEntryIsToolLike(visibleGroupedEntries[0]!)
-                ? visibleGroupedEntries[0]!.label
-                : summarizeToolGroup(visibleGroupedEntries),
-            summaryKind,
-            hasFailure:
-              latestToolEntry !== undefined &&
-              workEntryDisplayIndicatesToolFailure(latestToolEntry),
-          });
-          if (expanded) {
-            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-              nextRows.push({
-                kind: "work",
-                id: workEntry.id,
-                createdAt: workEntry.createdAt,
-                groupedEntries: [workEntry],
-                isExpandedToolGroupEntry: true,
-                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-              });
+          const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+          if (activeInProgressToolEntries.length > 0) {
+            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
+            const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+            const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
+            nextRows.push({
+              kind: "work-live",
+              id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
+              createdAt: timelineEntry.createdAt,
+              entry: latestActiveToolEntry,
+              groupedEntries: visibleGroupedEntries,
+              groupId,
+              expanded,
+            });
+            if (expanded) {
+              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
+                nextRows.push({
+                  kind: "work",
+                  id: workEntry.id,
+                  createdAt: workEntry.createdAt,
+                  groupedEntries: [workEntry],
+                  isExpandedToolGroupEntry: true,
+                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
+                });
+              }
+            }
+          } else {
+            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
+            const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+            const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+            const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
+            nextRows.push({
+              kind: "work-toggle",
+              id: `work-toggle:${timelineEntry.id}`,
+              createdAt: timelineEntry.createdAt,
+              groupId,
+              hiddenCount: visibleGroupedEntries.length,
+              expanded,
+              summary:
+                visibleGroupedEntries.length === 1 &&
+                !workLogEntryIsToolLike(visibleGroupedEntries[0]!)
+                  ? visibleGroupedEntries[0]!.label
+                  : summarizeToolGroup(visibleGroupedEntries),
+              summaryKind,
+              hasFailure:
+                latestToolEntry !== undefined &&
+                workEntryDisplayIndicatesToolFailure(latestToolEntry),
+            });
+            if (expanded) {
+              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
+                nextRows.push({
+                  kind: "work",
+                  id: workEntry.id,
+                  createdAt: workEntry.createdAt,
+                  groupedEntries: [workEntry],
+                  isExpandedToolGroupEntry: true,
+                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
+                });
+              }
             }
           }
         }

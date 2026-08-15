@@ -19,6 +19,7 @@ const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
+const NOOP_OPEN_TODOS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -71,6 +72,7 @@ import {
   MousePointerClickIcon,
   PaintbrushIcon,
   PlayIcon,
+  PanelRightOpenIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -86,6 +88,7 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { TodoChecklist } from "../TodoChecklist";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -165,6 +168,7 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  onOpenTodos: () => void;
 }
 
 interface TimelineRowActivityState {
@@ -224,6 +228,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  onOpenTodos?: () => void;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
@@ -273,6 +278,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onOpenTodos = NOOP_OPEN_TODOS,
   listRef,
   timelineEntries,
   latestTurn,
@@ -553,6 +559,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenTodos,
     }),
     [
       timestampFormat,
@@ -572,6 +579,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenTodos,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1314,6 +1322,30 @@ function ProposedPlanTimelineRow({
         workspaceRoot={ctx.workspaceRoot}
       />
     </div>
+  );
+}
+
+function OpenTodosButton() {
+  const { onOpenTodos } = use(TimelineRowCtx);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-icon-muted hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            aria-label="Open Todos"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenTodos();
+            }}
+          />
+        }
+      >
+        <PanelRightOpenIcon className="size-3.5" aria-hidden />
+      </TooltipTrigger>
+      <TooltipPopup>Open Todos</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -2163,15 +2195,24 @@ function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
 
+function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
+  return workEntry.todoItems !== undefined;
+}
+
 function workEntryPreview(
   workEntry: Pick<
     TimelineWorkEntry,
-    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "changedFiles"
+    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "todoItems" | "changedFiles"
   >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
+  if (workEntry.todoItems !== undefined) {
+    const todos = workEntry.todoItems;
+    if (todos.length === 0) return "No todos";
+    return `${todos.filter((todo) => todo.status === "completed").length}/${todos.length} completed`;
+  }
   if (workEntryIsRead(workEntry)) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
@@ -2217,6 +2258,9 @@ function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
 ): string | null {
+  if (workEntryIsTodo(workEntry) && workEntry.toolLifecycleStatus !== "failed") {
+    return null;
+  }
   const blocks: string[] = [];
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
     blocks.push(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
@@ -2280,13 +2324,14 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntryIsTodo(workEntry)) {
+    return "Update todos";
+  }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
-
-const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 /**
  * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
@@ -2413,9 +2458,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const preview = workEntryPreview(workEntry, workspaceRoot);
+  const heading = toolWorkEntryHeading(workEntry);
+  const displayText =
+    workEntryIsTodo(workEntry) && preview ? `${heading} - ${preview}` : preview ?? heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand = expandedBody !== null;
+  const canExpand = expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
@@ -2463,51 +2511,61 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       className={cn(
         "flex flex-col rounded-md px-0.5 transition-colors",
         isExpandedToolGroupEntry ? "py-0" : "py-0.5",
-        canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
-      {...rowToggleProps}
     >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
-        <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
+      <div className="flex min-w-0 items-center gap-1">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 select-none items-center gap-1.5 rounded-md transition-[background-color,opacity,translate] duration-200",
+            canExpand &&
+              "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          )}
+          {...rowToggleProps}
         >
-          <WorkEntryIconSvg
-            name={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
-              <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
-            </p>
-          </div>
           <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              !canExpand && "invisible",
-            )}
-            aria-hidden
+            className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+            role={showFailedIndicator ? "img" : undefined}
+            aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+            aria-hidden={!showEntryIcon}
           >
-            <ChevronDownIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-180",
-              )}
+            <WorkEntryIconSvg
+              name={entryIconName}
+              className="block size-4 shrink-0 stroke-[1.8] opacity-70"
             />
           </span>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
+                <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
+              </p>
+            </div>
+            <span
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center",
+                !canExpand && "invisible",
+              )}
+              aria-hidden
+            >
+              <ChevronDownIcon
+                className={cn(
+                  "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+                  expanded && "rotate-180",
+                )}
+              />
+            </span>
+          </div>
         </div>
+        {workEntryIsTodo(workEntry) ? <OpenTodosButton /> : null}
       </div>
-      {expanded && canExpand && expandedBody ? (
-        <div
-          className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
-          onClick={stopRowToggle}
-          onPointerDown={stopRowToggle}
-        >
+      {expanded && workEntry.todoItems !== undefined ? (
+        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
+          {workEntry.todoItems.length > 0 ? <TodoChecklist items={workEntry.todoItems} /> : null}
+          {expandedBody ? (
+            <pre className={cn("mt-1", toolCallExpandedBodyClassName)}>{expandedBody}</pre>
+          ) : null}
+        </div>
+      ) : expanded && canExpand && expandedBody ? (
+        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
           <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
         </div>
       ) : null}
