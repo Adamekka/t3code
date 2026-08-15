@@ -363,4 +363,97 @@ describe("projectActivityPayload", () => {
     });
     expect(projectActivityPayload(projected)).toEqual(projected);
   });
+
+  it("projects stored OpenCode TodoWrite input without serialized JSON", () => {
+    const projected = projectActivityPayload({
+      ...activity({
+        itemType: "file_change",
+        detail: '[{"content":"Test glob and grep","status":"completed","priority":"low"}]',
+        data: {
+          tool: "todowrite",
+          state: {
+            status: "completed",
+            input: {
+              todos: [
+                { content: "Test glob and grep", status: "completed", priority: "low" },
+                { content: "Test TodoWrite", status: "in_progress", priority: "high" },
+                { content: "Review results", status: "pending", priority: "medium" },
+                { content: "Cancelled task", status: "cancelled", priority: "medium" },
+              ],
+            },
+          },
+        },
+      }),
+      summary: "todowrite",
+    });
+
+    expect(projected.payload).toEqual({
+      itemType: "file_change",
+      data: {
+        kind: "todo",
+        todos: [
+          { content: "Test glob and grep", status: "completed" },
+          { content: "Test TodoWrite", status: "inProgress" },
+          { content: "Review results", status: "pending" },
+          { content: "Cancelled task", status: "cancelled" },
+        ],
+      },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("projects stored Claude TodoWrite input into the same todo shape", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        detail: "Todos updated",
+        data: {
+          toolName: "TodoWrite",
+          input: {
+            todos: [
+              { content: "Check the surface", status: "in_progress", activeForm: "Checking" },
+              { content: "Finish verification", status: "pending" },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "file_change",
+      data: {
+        kind: "todo",
+        todos: [
+          { content: "Check the surface", status: "inProgress" },
+          { content: "Finish verification", status: "pending" },
+        ],
+      },
+    });
+  });
+
+  it("preserves TodoWrite failure details", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "failed",
+        detail: "TodoWrite failed: provider disconnected",
+        data: {
+          tool: "todowrite",
+          state: {
+            input: { todos: [{ content: "Retry later", status: "pending" }] },
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "file_change",
+      status: "failed",
+      detail: "TodoWrite failed: provider disconnected",
+      data: {
+        kind: "todo",
+        todos: [{ content: "Retry later", status: "pending" }],
+      },
+    });
+  });
 });
