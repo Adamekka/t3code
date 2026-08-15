@@ -367,7 +367,7 @@ export function projectActivityPayload(
   }
 
   const itemStatus = asRecord(data.item)?.status;
-  const projectedPayload =
+  const statusAdjustedPayload =
     payload.status === "completed" && (itemStatus === "failed" || itemStatus === "declined")
       ? { ...payload, status: itemStatus }
       : payload;
@@ -376,7 +376,7 @@ export function projectActivityPayload(
     return {
       ...activity,
       payload: {
-        ...projectedPayload,
+        ...statusAdjustedPayload,
         data: projectMcpToolCallData(data),
       },
     };
@@ -385,6 +385,7 @@ export function projectActivityPayload(
   const projectedData: Record<string, unknown> = {};
   const state = asRecord(data.state);
   const input = asRecord(state?.input);
+  const directInput = asRecord(data.input);
   const isReadActivity =
     data.tool === "read" ||
     data.kind === "read" ||
@@ -393,6 +394,8 @@ export function projectActivityPayload(
     data.tool === "glob" ||
     data.kind === "glob" ||
     activity.summary.trim().toLowerCase() === "glob";
+  const toolName = asTrimmedString(data.tool) ?? asTrimmedString(data.toolName);
+  const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
   const readOutput =
     isReadActivity && typeof payload.detail === "string"
       ? parseOpenCodeReadOutput(payload.detail)
@@ -407,6 +410,37 @@ export function projectActivityPayload(
         ? input.pattern.trim()
         : ""
     : "";
+  const todos: Array<{
+    content: string;
+    status: "pending" | "inProgress" | "completed" | "cancelled";
+  }> = [];
+  if (isTodoActivity) {
+    const rawTodos = Array.isArray(data.todos)
+      ? data.todos
+      : Array.isArray(directInput?.todos)
+        ? directInput.todos
+        : Array.isArray(input?.todos)
+          ? input.todos
+          : [];
+    for (const rawTodo of rawTodos) {
+      const todo = asRecord(rawTodo);
+      const content = asTrimmedString(todo?.content);
+      if (!content) {
+        continue;
+      }
+      const rawStatus = todo?.status;
+      const status =
+        rawStatus === "completed" || rawStatus === "cancelled" || rawStatus === "pending"
+          ? rawStatus
+          : rawStatus === "in_progress" || rawStatus === "inProgress"
+            ? "inProgress"
+            : null;
+      if (!status) {
+        continue;
+      }
+      todos.push({ content, status });
+    }
+  }
   const item = projectCommandData(data);
   if (item) {
     projectedData.item = item;
@@ -438,6 +472,9 @@ export function projectActivityPayload(
     projectedData.kind = "read";
   } else if (isGlobActivity) {
     projectedData.kind = "glob";
+  } else if (isTodoActivity) {
+    projectedData.kind = "todo";
+    projectedData.todos = todos;
   } else if ("kind" in data) {
     projectedData.kind = data.kind;
   }
@@ -456,13 +493,16 @@ export function projectActivityPayload(
     projectedData.rawOutput = rawOutput;
   }
 
-  const normalizedPayload = { ...projectedPayload };
+  const normalizedPayload = { ...statusAdjustedPayload };
   if (readOutput) {
     if (readOutput.content.trim().length > 0) {
       normalizedPayload.detail = readOutput.content;
     } else {
       delete normalizedPayload.detail;
     }
+  }
+  if (isTodoActivity && payload.status !== "failed") {
+    delete normalizedPayload.detail;
   }
 
   return {

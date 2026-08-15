@@ -1013,6 +1013,39 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("/workspace/skills/js-ts/SKILL.md");
   });
 
+  it("formats TodoWrite as a concise expandable todo row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-todos",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-todos",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "todowrite",
+              tone: "tool",
+              itemType: "file_change",
+              detail: '[{"content":"Test TodoWrite","status":"completed"}]',
+              todoItems: [
+                { content: "Test glob and grep", status: "completed" },
+                { content: "Test TodoWrite", status: "inProgress" },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Update todos - 1/2 completed"');
+    expect(markup).toContain('aria-label="Open Todos"');
+    expect(markup).not.toContain("Todowrite");
+    expect(markup).not.toContain("Test TodoWrite");
+    expect(markup).not.toContain("&quot;status&quot;");
+  });
+
   it("summarizes changed files in one line", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
