@@ -64,6 +64,11 @@ export type WorkLogToolLifecycleStatus =
   | "declined"
   | "stopped";
 
+export interface WorkLogTodoItem {
+  content: string;
+  status: "pending" | "inProgress" | "completed" | "cancelled";
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -75,6 +80,7 @@ export interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   globPattern?: string;
+  todoItems?: ReadonlyArray<WorkLogTodoItem>;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -758,6 +764,48 @@ export function deriveTurnPlans(
   }));
 }
 
+export function deriveLatestTodoItems(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ReadonlyArray<WorkLogTodoItem> | null {
+  function planItems(payload: Record<string, unknown> | null): WorkLogTodoItem[] | null {
+    if (!Array.isArray(payload?.plan)) {
+      return null;
+    }
+    const items: WorkLogTodoItem[] = [];
+    for (const rawStep of payload.plan) {
+      const step = asRecord(rawStep);
+      const content = asTrimmedString(step?.step);
+      if (
+        !content ||
+        (step?.status !== "pending" &&
+          step?.status !== "inProgress" &&
+          step?.status !== "completed")
+      ) {
+        continue;
+      }
+      items.push({ content, status: step.status });
+    }
+    return items;
+  }
+
+  let latestActivity: OrchestrationThreadActivity | null = null;
+  let latest: ReadonlyArray<WorkLogTodoItem> | null = null;
+  for (const activity of activities) {
+    const payload = asRecord(activity.payload);
+    const toolItems = workLogTodoItemsFromPayload(payload);
+    const items = toolItems ?? (activity.kind === "turn.plan.updated" ? planItems(payload) : null);
+    if (
+      items === null ||
+      (latestActivity !== null && compareActivitiesByOrder(latestActivity, activity) > 0)
+    ) {
+      continue;
+    }
+    latestActivity = activity;
+    latest = items;
+  }
+  return latest;
+}
+
 export function findLatestProposedPlan(
   proposedPlans: ReadonlyArray<ProposedPlan>,
   latestTurnId: TurnId | string | null | undefined,
@@ -909,6 +957,34 @@ function extractWorkLogToolLifecycleStatus(
   return undefined;
 }
 
+function workLogTodoItemsFromPayload(
+  payload: Record<string, unknown> | null,
+): WorkLogTodoItem[] | null {
+  const data = asRecord(payload?.data);
+  if (data?.kind !== "todo") {
+    return null;
+  }
+  const items: WorkLogTodoItem[] = [];
+  if (!Array.isArray(data.todos)) {
+    return items;
+  }
+  for (const rawTodo of data.todos) {
+    const todo = asRecord(rawTodo);
+    const content = asTrimmedString(todo?.content);
+    if (
+      !content ||
+      (todo?.status !== "pending" &&
+        todo?.status !== "inProgress" &&
+        todo?.status !== "completed" &&
+        todo?.status !== "cancelled")
+    ) {
+      continue;
+    }
+    items.push({ content, status: todo.status });
+  }
+  return items;
+}
+
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
   const cachedEntry = derivedWorkLogEntryByActivity.get(activity);
   if (cachedEntry) {
@@ -920,8 +996,11 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
-  const globPattern = asTrimmedString(asRecord(payload?.data)?.pattern);
+  const data = asRecord(payload?.data);
+  const globPattern = asTrimmedString(data?.pattern);
+  const todoItems = workLogTodoItemsFromPayload(payload);
   const title = extractToolTitle(payload);
+  const todoFailed = todoItems !== null && payload?.status === "failed";
   const isTaskActivity =
     activity.kind === "task.started" ||
     activity.kind === "task.progress" ||
@@ -945,7 +1024,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       payload.detail.length > 0
       ? stripTrailingExitCode(payload.detail).output
       : null
-    : extractToolDetail(payload, title ?? activity.summary);
+    : todoItems !== null && !todoFailed
+      ? null
+      : extractToolDetail(payload, title ?? activity.summary);
   const toolCallId = isTaskActivity ? null : extractToolCallId(payload);
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
@@ -973,6 +1054,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (globPattern) {
     entry.globPattern = globPattern;
+  }
+  if (todoItems !== null) {
+    entry.todoItems = todoItems;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;

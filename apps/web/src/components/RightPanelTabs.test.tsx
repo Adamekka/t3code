@@ -109,6 +109,7 @@ function renderTabs(
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
+      onAddTodos={() => undefined}
       liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
@@ -116,6 +117,44 @@ function renderTabs(
       filesAvailable={false}
       pullRequestAvailable={false}
       agentsAvailable={false}
+      todosAvailable
+    >
+      <div>content</div>
+    </RightPanelTabs>,
+  );
+}
+
+function renderLauncher() {
+  return renderToStaticMarkup(
+    <RightPanelTabs
+      mode="inline"
+      surfaces={[]}
+      activeSurfaceId={null}
+      pendingSurfaceIds={new Set()}
+      previewSessions={{}}
+      desktopByTabId={{}}
+      terminalLabelsById={new Map()}
+      onActivate={() => undefined}
+      onCloseSurface={() => undefined}
+      onCloseOtherSurfaces={() => undefined}
+      onCloseSurfacesToRight={() => undefined}
+      onCloseAllSurfaces={() => undefined}
+      onCopyFilePath={() => undefined}
+      onAddBrowser={() => undefined}
+      onAddTerminal={() => undefined}
+      onAddPullRequest={() => undefined}
+      onAddDiff={() => undefined}
+      onAddFiles={() => undefined}
+      onAddAgents={() => undefined}
+      onAddTodos={() => undefined}
+      liveAgentCount={0}
+      browserAvailable={false}
+      terminalAvailable={false}
+      diffAvailable={false}
+      filesAvailable={false}
+      pullRequestAvailable={false}
+      agentsAvailable={false}
+      todosAvailable
     >
       <div>content</div>
     </RightPanelTabs>,
@@ -265,5 +304,15 @@ describe("tabMuteMenuItem", () => {
       label: "Unmute tab",
       disabled: false,
     });
+  });
+});
+
+describe("RightPanelTabs surface launcher", () => {
+  it("always offers the Todos surface with the L shortcut for a thread", () => {
+    const html = renderLauncher();
+
+    expect(html).toContain("Todos");
+    expect(html).toContain("Follow this thread&#x27;s current checklist.");
+    expect(html).toContain(">L</kbd>");
   });
 });
