@@ -251,6 +251,18 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps Todos as a thread-scoped singleton surface", () => {
+    useRightPanelStore.getState().open(refA, "todos");
+    useRightPanelStore.getState().open(refA, "todos");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "todos",
+      surfaces: [{ id: "todos", kind: "todos" }],
+    });
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
+  });
+
   it("replaces the standalone explorer with peer file surfaces", () => {
     useRightPanelStore.getState().open(refA, "files");
     useRightPanelStore.getState().openFile(refA, "src/index.ts");
