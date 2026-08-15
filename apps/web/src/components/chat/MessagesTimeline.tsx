@@ -14,6 +14,7 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_OPEN_TODOS = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -57,6 +58,7 @@ import {
   MessageCircleIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
+  PanelRightOpenIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -72,6 +74,7 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { TodoChecklist } from "../TodoChecklist";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -148,6 +151,7 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  onOpenTodos: () => void;
 }
 
 interface TimelineRowActivityState {
@@ -207,6 +211,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  onOpenTodos?: () => void;
   isWorking: boolean;
   workingStepLabel?: string | null;
   activeTurnStartedAt: string | null;
@@ -255,6 +260,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onOpenTodos = NOOP_OPEN_TODOS,
   listRef,
   timelineEntries,
   latestTurn,
@@ -529,6 +535,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenTodos,
     }),
     [
       timestampFormat,
@@ -545,6 +552,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenTodos,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1210,6 +1218,30 @@ function ProposedPlanTimelineRow({
   );
 }
 
+function OpenTodosButton() {
+  const { onOpenTodos } = use(TimelineRowCtx);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-icon-muted hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            aria-label="Open Todos"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenTodos();
+            }}
+          />
+        }
+      >
+        <PanelRightOpenIcon className="size-3.5" aria-hidden />
+      </TooltipTrigger>
+      <TooltipPopup>Open Todos</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 /**
  * Inline folded plan chip: one row per turn that produced plan/todo steps.
  * Collapsed by default — a segment bar plus the in-progress step label —
@@ -1224,6 +1256,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
   const { steps } = row.turnPlan.plan;
   const completedCount = steps.filter((step) => step.status === "completed").length;
   const allDone = completedCount === steps.length;
+  const checklistItems = steps.map((step) => ({ content: step.step, status: step.status }));
   // Label priority: the in-progress step, else the next pending step (plan
   // just created), else the last step (plan finished, rendered muted).
   const label =
@@ -1235,77 +1268,48 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
 
   return (
     <div className="min-w-0 px-1 py-0.5">
-      <button
-        type="button"
-        className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <Chevron className="size-3.5 shrink-0 text-muted-foreground/65" />
-        {steps.length > 1 ? (
-          <span aria-hidden className="flex shrink-0 items-center gap-0.5">
-            {steps.map((step) => (
-              <span
-                key={step.step}
-                className={cn(
-                  "h-[3px] w-2.5 rounded-full",
-                  step.status === "completed"
-                    ? "bg-success"
-                    : step.status === "inProgress"
-                      ? "bg-primary"
-                      : "bg-muted-foreground/25",
-                )}
-              />
-            ))}
-          </span>
-        ) : null}
-        <span
-          className={cn(
-            "min-w-0 truncate",
-            allDone ? "text-muted-foreground/65" : "font-medium text-foreground/85",
-          )}
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-0.5 py-0.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
         >
-          {label}
-        </span>
-        {steps.length > 1 ? (
-          <span className="shrink-0 text-muted-foreground/50 tabular-nums">
-            {completedCount}/{steps.length}
+          <Chevron className="size-3.5 shrink-0 text-muted-foreground/65" />
+          {steps.length > 1 ? (
+            <span aria-hidden className="flex shrink-0 items-center gap-0.5">
+              {steps.map((step) => (
+                <span
+                  key={step.step}
+                  className={cn(
+                    "h-[3px] w-2.5 rounded-full",
+                    step.status === "completed"
+                      ? "bg-success"
+                      : step.status === "inProgress"
+                        ? "bg-primary"
+                        : "bg-muted-foreground/25",
+                  )}
+                />
+              ))}
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              "min-w-0 truncate",
+              allDone ? "text-muted-foreground/65" : "font-medium text-foreground/85",
+            )}
+          >
+            {label}
           </span>
-        ) : null}
-      </button>
-      {expanded ? (
-        <div className="mt-0.5 space-y-px pl-6">
-          {steps.map((step) => (
-            <div key={step.step} className="flex items-baseline gap-2 text-[12px] leading-5">
-              <span
-                className={cn(
-                  "w-3 shrink-0 text-center font-mono text-[10px]",
-                  step.status === "completed"
-                    ? "text-success"
-                    : step.status === "inProgress"
-                      ? "text-primary"
-                      : "text-muted-foreground/40",
-                )}
-                aria-hidden
-              >
-                {step.status === "completed" ? "✓" : step.status === "inProgress" ? "●" : "○"}
-              </span>
-              <span
-                className={cn(
-                  "min-w-0",
-                  step.status === "completed"
-                    ? "text-muted-foreground/55"
-                    : step.status === "inProgress"
-                      ? "text-foreground/90"
-                      : "text-muted-foreground/70",
-                )}
-              >
-                {step.step}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+          {steps.length > 1 ? (
+            <span className="shrink-0 text-muted-foreground/50 tabular-nums">
+              {completedCount}/{steps.length}
+            </span>
+          ) : null}
+        </button>
+        <OpenTodosButton />
+      </div>
+      {expanded ? <TodoChecklist items={checklistItems} className="mt-0.5 pl-6" /> : null}
     </div>
   );
 });
@@ -2207,15 +2211,24 @@ function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
 
+function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
+  return workEntry.todoItems !== undefined;
+}
+
 function workEntryPreview(
   workEntry: Pick<
     TimelineWorkEntry,
-    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "changedFiles"
+    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "todoItems" | "changedFiles"
   >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
+  if (workEntry.todoItems !== undefined) {
+    const todos = workEntry.todoItems;
+    if (todos.length === 0) return "No todos";
+    return `${todos.filter((todo) => todo.status === "completed").length}/${todos.length} completed`;
+  }
   if (workEntryIsRead(workEntry)) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
@@ -2431,6 +2444,9 @@ function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
 ): string | null {
+  if (workEntryIsTodo(workEntry) && workEntry.toolLifecycleStatus !== "failed") {
+    return null;
+  }
   const blocks: string[] = [];
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
     blocks.push(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
@@ -2494,13 +2510,14 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntryIsTodo(workEntry)) {
+    return "Update todos";
+  }
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
-
-const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 /**
  * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
@@ -2627,9 +2644,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
-  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const preview = workEntryPreview(workEntry, workspaceRoot);
+  const heading = toolWorkEntryHeading(workEntry);
+  const displayText =
+    workEntryIsTodo(workEntry) && preview ? `${heading} - ${preview}` : preview ?? heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand = expandedBody !== null;
+  const canExpand = expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
@@ -2677,51 +2697,61 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       className={cn(
         "flex flex-col rounded-md px-0.5 transition-colors",
         isExpandedToolGroupEntry ? "py-0" : "py-0.5",
-        canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
-      {...rowToggleProps}
     >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
-        <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
+      <div className="flex min-w-0 items-center gap-1">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 select-none items-center gap-1.5 rounded-md transition-[background-color,opacity,translate] duration-200",
+            canExpand &&
+              "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          )}
+          {...rowToggleProps}
         >
-          <WorkEntryIconSvg
-            name={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
-              <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
-            </p>
-          </div>
           <span
-            className={cn(
-              "flex size-4 shrink-0 items-center justify-center",
-              !canExpand && "invisible",
-            )}
-            aria-hidden
+            className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+            role={showFailedIndicator ? "img" : undefined}
+            aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+            aria-hidden={!showEntryIcon}
           >
-            <ChevronDownIcon
-              className={cn(
-                "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-180",
-              )}
+            <WorkEntryIconSvg
+              name={entryIconName}
+              className="block size-4 shrink-0 stroke-[1.8] opacity-70"
             />
           </span>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
+                <span className={cn("min-w-0 flex-1 truncate", headingClass)}>{displayText}</span>
+              </p>
+            </div>
+            <span
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center",
+                !canExpand && "invisible",
+              )}
+              aria-hidden
+            >
+              <ChevronDownIcon
+                className={cn(
+                  "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+                  expanded && "rotate-180",
+                )}
+              />
+            </span>
+          </div>
         </div>
+        {workEntryIsTodo(workEntry) ? <OpenTodosButton /> : null}
       </div>
-      {expanded && canExpand && expandedBody ? (
-        <div
-          className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
-          onClick={stopRowToggle}
-          onPointerDown={stopRowToggle}
-        >
+      {expanded && workEntry.todoItems !== undefined ? (
+        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
+          {workEntry.todoItems.length > 0 ? <TodoChecklist items={workEntry.todoItems} /> : null}
+          {expandedBody ? (
+            <pre className={cn("mt-1", toolCallExpandedBodyClassName)}>{expandedBody}</pre>
+          ) : null}
+        </div>
+      ) : expanded && canExpand && expandedBody ? (
+        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
           <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
         </div>
       ) : null}
