@@ -12,6 +12,7 @@ import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-l
 import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  deriveLatestTodoItems,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
@@ -622,6 +623,94 @@ describe("deriveActivePlanState", () => {
       }),
     ];
     expect(deriveActivePlanState(activities, TurnId.make("turn-1"))).toBeNull();
+  });
+});
+
+describe("deriveLatestTodoItems", () => {
+  it("uses the newest explicit or canonical checklist update", () => {
+    const activities = [
+      makeActivity({
+        id: "tool-todos",
+        kind: "tool.completed",
+        summary: "TodoWrite",
+        sequence: 1,
+        payload: {
+          data: {
+            kind: "todo",
+            todos: [{ content: "Inspect the implementation", status: "completed" }],
+          },
+        },
+      }),
+      makeActivity({
+        id: "canonical-todos",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        sequence: 2,
+        payload: {
+          plan: [
+            { step: "Verify the surface", status: "inProgress" },
+            { step: "Ship it", status: "pending" },
+          ],
+        },
+      }),
+    ];
+
+    expect(deriveLatestTodoItems(activities)).toEqual([
+      { content: "Verify the surface", status: "inProgress" },
+      { content: "Ship it", status: "pending" },
+    ]);
+  });
+
+  it("treats an explicit empty update as clearing the latest checklist", () => {
+    expect(
+      deriveLatestTodoItems([
+        makeActivity({
+          id: "todos-set",
+          kind: "turn.plan.updated",
+          summary: "Plan updated",
+          sequence: 1,
+          payload: { plan: [{ step: "Complete me", status: "completed" }] },
+        }),
+        makeActivity({
+          id: "todos-clear",
+          kind: "tool.completed",
+          summary: "TodoWrite",
+          sequence: 2,
+          payload: { data: { kind: "todo", todos: [] } },
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("retains a completed checklist across unrelated later activity", () => {
+    expect(
+      deriveLatestTodoItems([
+        makeActivity({
+          kind: "turn.plan.updated",
+          summary: "Plan updated",
+          sequence: 1,
+          payload: { plan: [{ step: "Finished", status: "completed" }] },
+        }),
+        makeActivity({
+          kind: "tool.completed",
+          summary: "Read",
+          sequence: 2,
+          payload: { data: { kind: "read" } },
+        }),
+      ]),
+    ).toEqual([{ content: "Finished", status: "completed" }]);
+  });
+
+  it("ignores proposed plans", () => {
+    expect(
+      deriveLatestTodoItems([
+        makeActivity({
+          kind: "turn.proposed.completed",
+          summary: "Plan proposed",
+          payload: { plan: [{ step: "Not a checklist", status: "pending" }] },
+        }),
+      ]),
+    ).toBeNull();
   });
 });
 
@@ -2277,6 +2366,59 @@ describe("deriveWorkLogEntries quiet-timeline guarantee", () => {
       label: "Glob",
       globPattern: "**/*.ts",
       detail: "/workspace/src/index.ts",
+    });
+  });
+
+  it("derives structured TodoWrite rows without serialized detail", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        kind: "tool.completed",
+        summary: "todowrite",
+        payload: {
+          itemType: "file_change",
+          detail: '[{"content":"Test TodoWrite","status":"completed"}]',
+          data: {
+            kind: "todo",
+            todos: [
+              { content: "Test glob and grep", status: "completed" },
+              { content: "Test TodoWrite", status: "inProgress" },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      label: "todowrite",
+      todoItems: [
+        { content: "Test glob and grep", status: "completed" },
+        { content: "Test TodoWrite", status: "inProgress" },
+      ],
+    });
+    expect(entry?.detail).toBeUndefined();
+  });
+
+  it("keeps TodoWrite failure details alongside the structured checklist", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        kind: "tool.completed",
+        summary: "todowrite",
+        tone: "error",
+        payload: {
+          itemType: "file_change",
+          status: "failed",
+          detail: "TodoWrite failed: provider disconnected",
+          data: {
+            kind: "todo",
+            todos: [{ content: "Retry later", status: "pending" }],
+          },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      detail: "TodoWrite failed: provider disconnected",
+      todoItems: [{ content: "Retry later", status: "pending" }],
     });
   });
 
