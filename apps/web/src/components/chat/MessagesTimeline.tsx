@@ -2896,7 +2896,30 @@ function buildToolCallExpandedBody(
   } else if (workEntry.command?.trim()) {
     blocks.push(workEntry.command.trim());
   }
-  if (workEntry.detail?.trim()) {
+  if ((workEntry.searchMatches?.length ?? 0) > 0) {
+    const matches = workEntry.searchMatches!;
+    const workspaceLabel = workspaceRoot
+      ? formatWorkspaceRelativePath(workspaceRoot, workspaceRoot)
+      : null;
+    const formatSearchMatchPath = (path: string, lineNumber: number) => {
+      const formatted = formatWorkspaceRelativePath(`${path}:${lineNumber}`, workspaceRoot);
+      return workspaceLabel && formatted.startsWith(`${workspaceLabel}/`)
+        ? formatted.slice(workspaceLabel.length + 1)
+        : formatted;
+    };
+    blocks.push(
+      [
+        ...matches.map(
+          (match) => `${formatSearchMatchPath(match.path, match.lineNumber)}  ${match.lineContent}`,
+        ),
+        ...(workEntry.searchMatchCount && workEntry.searchMatchCount > matches.length
+          ? [
+              `${workEntry.searchMatchCount - matches.length} more ${workEntry.searchMatchCount - matches.length === 1 ? "match" : "matches"}`,
+            ]
+          : []),
+      ].join("\n"),
+    );
+  } else if (workEntry.detail?.trim()) {
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles = workEntryIsRead(workEntry) ? [] : (workEntry.changedFiles ?? []);
@@ -3093,6 +3116,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     !toolPresentation && expanded && workEntry.command?.trim() ? "Command" : previewText;
   const canExpand =
     (workEntry.todoItems?.length ?? 0) > 0 ||
+    (workEntry.searchMatches?.length ?? 0) > 0 ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
     Boolean(
       workEntryRawCommand(workEntry) ||

@@ -81,6 +81,12 @@ export interface WorkLogTodoItem {
   status: "pending" | "inProgress" | "completed" | "cancelled";
 }
 
+export interface WorkLogSearchMatch {
+  path: string;
+  lineNumber: number;
+  lineContent: string;
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -93,6 +99,9 @@ export interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   globPattern?: string;
+  searchQuery?: string;
+  searchMatches?: ReadonlyArray<WorkLogSearchMatch>;
+  searchMatchCount?: number;
   todoItems?: ReadonlyArray<WorkLogTodoItem>;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
@@ -981,6 +990,29 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const changedFiles = extractChangedFiles(payload);
   const data = asRecord(payload?.data);
   const globPattern = asTrimmedString(data?.pattern);
+  const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
+  const searchQuery =
+    asTrimmedString(rawInput?.query) ??
+    asTrimmedString(rawInput?.pattern) ??
+    asTrimmedString(rawInput?.searchTerm);
+  const searchMatches: WorkLogSearchMatch[] = [];
+  if (data?.kind === "search" && Array.isArray(data.searchMatches)) {
+    for (const rawMatch of data.searchMatches) {
+      const match = asRecord(rawMatch);
+      const path = asTrimmedString(match?.path);
+      const lineNumber = asNumber(match?.lineNumber);
+      if (
+        path &&
+        lineNumber !== null &&
+        Number.isSafeInteger(lineNumber) &&
+        lineNumber > 0 &&
+        typeof match?.lineContent === "string"
+      ) {
+        searchMatches.push({ path, lineNumber, lineContent: match.lineContent });
+      }
+    }
+  }
+  const searchMatchCount = asNumber(data?.searchMatchCount);
   const todoItems = workLogTodoItemsFromPayload(payload);
   const title = extractToolTitle(payload);
   const toolPresentation = extractToolActivityPresentation(payload);
@@ -1042,6 +1074,19 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (globPattern) {
     entry.globPattern = globPattern;
+  }
+  if (searchQuery) {
+    entry.searchQuery = searchQuery;
+  }
+  if (searchMatches.length > 0) {
+    entry.searchMatches = searchMatches;
+    if (
+      searchMatchCount !== null &&
+      Number.isSafeInteger(searchMatchCount) &&
+      searchMatchCount >= searchMatches.length
+    ) {
+      entry.searchMatchCount = searchMatchCount;
+    }
   }
   if (todoItems !== null) {
     entry.todoItems = todoItems;

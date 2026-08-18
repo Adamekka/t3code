@@ -38,7 +38,7 @@ export const TIMELINE_CONTENT_MAX_WIDTH = 768;
 export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
-  if (toolGroupAction(entry) === "read" || entry.globPattern?.trim()) {
+  if (toolGroupAction(entry) === "read" || entry.globPattern?.trim() || entry.searchQuery?.trim()) {
     return summarizeToolGroup([entry]);
   }
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
@@ -53,12 +53,16 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command) return entry.command;
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  if (entry.searchQuery) {
+    const title = `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+    return `${title} - ${entry.searchQuery}`;
+  }
   if (entry.todoItems !== undefined) {
     const completed = entry.todoItems.filter((todo) => todo.status === "completed").length;
     const progress = entry.todoItems.length === 0 ? "No todos" : `${completed}/${entry.todoItems.length} completed`;
     return `Update todos - ${progress}`;
   }
-  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
   if (heading.toLowerCase() === "glob") {
     return entry.globPattern ?? `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
   }

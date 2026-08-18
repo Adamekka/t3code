@@ -401,6 +401,87 @@ describe("projectActivityPayload", () => {
     expect(projectActivityPayload(projected)).toEqual(projected);
   });
 
+  it("retains bounded normalized OpenCode grep presentation data", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail: "Found 1 match\n/workspace/SKILL.md:\n  Line 9: proactive",
+        data: {
+          toolCallId: "call-grep",
+          tool: "grep",
+          kind: "search",
+          rawInput: { pattern: "proactive", path: "/workspace/AGENTS.md" },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      toolCallId: "call-grep",
+      kind: "search",
+      rawInput: { query: "proactive" },
+      searchMatches: [{ path: "/workspace/SKILL.md", lineNumber: 9, lineContent: "proactive" }],
+      searchMatchCount: 1,
+    });
+    expect((projected.payload as Record<string, unknown>).detail).toBeUndefined();
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("recovers normalized grep presentation from stored OpenCode tool state", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          "Found 6 matches\n/workspace/a.ts:\n  Line 1: proactive\n/workspace/b.ts:\n  Line 2: proactive\n/workspace/c.ts:\n  Line 3: proactive\n/workspace/d.ts:\n  Line 4: proactive\n/workspace/e.ts:\n  Line 5: proactive\n/workspace/f.ts:\n  Line 6: proactive",
+        data: {
+          tool: "grep",
+          state: {
+            status: "completed",
+            input: { pattern: "proactive", path: "/workspace" },
+            output:
+              "Found 6 matches\n/workspace/a.ts:\n  Line 1: proactive\n/workspace/b.ts:\n  Line 2: proactive\n/workspace/c.ts:\n  Line 3: proactive\n/workspace/d.ts:\n  Line 4: proactive\n/workspace/e.ts:\n  Line 5: proactive\n/workspace/f.ts:\n  Line 6: proactive",
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "search",
+      rawInput: { query: "proactive" },
+      searchMatches: [
+        { path: "/workspace/a.ts", lineNumber: 1, lineContent: "proactive" },
+        { path: "/workspace/b.ts", lineNumber: 2, lineContent: "proactive" },
+        { path: "/workspace/c.ts", lineNumber: 3, lineContent: "proactive" },
+        { path: "/workspace/d.ts", lineNumber: 4, lineContent: "proactive" },
+        { path: "/workspace/e.ts", lineNumber: 5, lineContent: "proactive" },
+      ],
+      searchMatchCount: 6,
+    });
+    expect((projected.payload as Record<string, unknown>).detail).toBeUndefined();
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("preserves malformed OpenCode grep output as bounded text", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail: "unexpected grep output",
+        data: {
+          tool: "grep",
+          state: {
+            status: "completed",
+            input: { pattern: "proactive", path: "/workspace" },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe("unexpected grep output");
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "search",
+      rawInput: { query: "proactive" },
+    });
+  });
+
   it("projects stored OpenCode TodoWrite input without serialized JSON", () => {
     const projected = projectActivityPayload({
       ...activity({

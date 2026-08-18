@@ -41,7 +41,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
-import { parseOpenCodeReadOutput } from "../OpenCodeToolOutput.ts";
+import { parseOpenCodeGrepOutput, parseOpenCodeReadOutput } from "../OpenCodeToolOutput.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
@@ -2108,14 +2108,22 @@ export function makeOpenCodeAdapter(
 
           if (part.type === "tool") {
             const itemType = toToolLifecycleItemType(part.tool);
-            const title =
-              part.state.status === "running" ? (part.state.title ?? part.tool) : part.tool;
+            const isGrep = part.tool.toLowerCase() === "grep";
+            const title = isGrep
+              ? "Grep"
+              : part.state.status === "running"
+                ? (part.state.title ?? part.tool)
+                : part.tool;
             const rawDetail = detailFromToolPart(part);
             const readOutput =
               part.tool === "read" && part.state.status === "completed"
                 ? parseOpenCodeReadOutput(part.state.output)
                 : null;
-            const detail = readOutput?.content ?? rawDetail;
+            const grepOutput =
+              isGrep && part.state.status === "completed"
+                ? (parseOpenCodeGrepOutput(part.state.output)?.content ?? part.state.output)
+                : null;
+            const detail = readOutput?.content ?? grepOutput ?? rawDetail;
             const command =
               part.tool === "bash" && typeof part.state.input.command === "string"
                 ? part.state.input.command
@@ -2137,6 +2145,9 @@ export function makeOpenCodeAdapter(
               data: {
                 tool: part.tool,
                 state: part.state,
+                ...(isGrep
+                  ? { toolCallId: part.callID, kind: "search", rawInput: part.state.input }
+                  : {}),
                 ...(command ? { command } : {}),
                 ...(part.tool === "read" ? { kind: "read" } : {}),
                 ...(readPath ? { files: [{ path: readPath }] } : {}),

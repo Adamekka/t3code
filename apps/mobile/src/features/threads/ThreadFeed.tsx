@@ -1480,7 +1480,10 @@ function useMarkdownStyles(
 
 function renderFeedEntry(
   info: { item: ThreadFeedEntry; index: number },
-  props: Pick<ThreadFeedProps, "environmentId" | "onUseArtifactTemplate" | "skills"> & {
+  props: Pick<
+    ThreadFeedProps,
+    "environmentId" | "onUseArtifactTemplate" | "skills" | "workspaceRoot"
+  > & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
@@ -1729,6 +1732,7 @@ function renderFeedEntry(
       scrollPositions={props.workGroupScrollPositions}
       iconSubtleColor={iconSubtleColor}
       themeAppearance={props.themeAppearance}
+      workspaceRoot={props.workspaceRoot}
       onCopyRow={props.onCopyWorkRow}
       onToggleRow={props.onToggleWorkRow}
       renderImage={props.renderViewedImage}
@@ -2744,6 +2748,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
             environmentId: props.environmentId,
+            workspaceRoot: props.workspaceRoot,
             copiedRowId,
             expandedWorkRows,
             workRowSizing,
@@ -2797,6 +2802,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.environmentId,
       props.onUseArtifactTemplate,
       props.skills,
+      props.workspaceRoot,
       renderMarkdownImage,
       renderViewedImage,
     ],
