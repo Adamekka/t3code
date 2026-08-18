@@ -77,6 +77,12 @@ export interface ThreadFeedActivity {
   readonly workEntry: WorkLogEntry;
   readonly groupedToolDetail?: boolean;
   readonly live?: boolean;
+  readonly searchMatches?: ReadonlyArray<{
+    readonly path: string;
+    readonly lineNumber: number;
+    readonly lineContent: string;
+  }>;
+  readonly searchMatchCount?: number;
 }
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
@@ -90,6 +96,13 @@ export interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   globPattern?: string;
+  searchQuery?: string;
+  searchMatches?: ReadonlyArray<{
+    path: string;
+    lineNumber: number;
+    lineContent: string;
+  }>;
+  searchMatchCount?: number;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -105,6 +118,7 @@ export interface WorkLogEntry {
 interface DerivedWorkLogEntry extends WorkLogEntry {
   sourceActivityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
+  toolCallId?: string;
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
 }
@@ -389,7 +403,31 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
-  const globPattern = asTrimmedString(asRecord(payload?.data)?.pattern);
+  const data = asRecord(payload?.data);
+  const globPattern = asTrimmedString(data?.pattern);
+  const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
+  const searchQuery =
+    asTrimmedString(rawInput?.query) ??
+    asTrimmedString(rawInput?.pattern) ??
+    asTrimmedString(rawInput?.searchTerm);
+  const searchMatches: Array<{ path: string; lineNumber: number; lineContent: string }> = [];
+  if (data?.kind === "search" && Array.isArray(data.searchMatches)) {
+    for (const rawMatch of data.searchMatches) {
+      const match = asRecord(rawMatch);
+      const path = asTrimmedString(match?.path);
+      const lineNumber = match?.lineNumber;
+      if (
+        path &&
+        typeof lineNumber === "number" &&
+        Number.isSafeInteger(lineNumber) &&
+        lineNumber > 0 &&
+        typeof match?.lineContent === "string"
+      ) {
+        searchMatches.push({ path, lineNumber, lineContent: match.lineContent });
+      }
+    }
+  }
+  const searchMatchCount = data?.searchMatchCount;
   const title = extractToolTitle(payload);
   // task.updated included: terminal bypassed updates (Codex children's only
   // terminal signal) must carry task identity so they collapse per child
@@ -435,6 +473,19 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (isTaskActivity && payload?.agentKind === "agent") {
     entry.agentSpawn = true;
+  }
+  if (searchQuery) {
+    entry.searchQuery = searchQuery;
+  }
+  if (searchMatches.length > 0) {
+    entry.searchMatches = searchMatches;
+    if (
+      typeof searchMatchCount === "number" &&
+      Number.isSafeInteger(searchMatchCount) &&
+      searchMatchCount >= searchMatches.length
+    ) {
+      entry.searchMatchCount = searchMatchCount;
+    }
   }
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
@@ -765,7 +816,21 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
     appendUniqueBlock(`MCP call\n${JSON.stringify(entry.toolData, null, 2)}`);
   }
   appendUniqueBlock(entry.rawCommand ?? entry.command);
-  appendUniqueBlock(entry.detail);
+  if ((entry.searchMatches?.length ?? 0) > 0) {
+    const matches = entry.searchMatches!;
+    appendUniqueBlock(
+      [
+        ...matches.map((match) => `${match.path}:${match.lineNumber}  ${match.lineContent}`),
+        ...(entry.searchMatchCount && entry.searchMatchCount > matches.length
+          ? [
+              `${entry.searchMatchCount - matches.length} more ${entry.searchMatchCount - matches.length === 1 ? "match" : "matches"}`,
+            ]
+          : []),
+      ].join("\n"),
+    );
+  } else {
+    appendUniqueBlock(entry.detail);
+  }
   if (!workEntryIsRead(entry) && (entry.changedFiles?.length ?? 0) > 0) {
     appendUniqueBlock(entry.changedFiles!.join("\n"));
   }
@@ -805,11 +870,12 @@ function workEntryIsGlob(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): 
 function workEntryPreview(
   workEntry: Pick<
     WorkLogEntry,
-    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "changedFiles"
+    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "searchQuery" | "changedFiles"
   >,
 ): string | null {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
+  if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntryIsRead(workEntry)) {
     return workEntry.changedFiles?.[0] ?? null;
   }
@@ -1805,6 +1871,10 @@ export function buildThreadFeed(
               status: workEntryStatus(entry),
               ...(entry.toolLifecycleStatus ? { lifecycleStatus: entry.toolLifecycleStatus } : {}),
               workEntry: entry,
+              ...(entry.searchMatches ? { searchMatches: entry.searchMatches } : {}),
+              ...(entry.searchMatchCount !== undefined
+                ? { searchMatchCount: entry.searchMatchCount }
+                : {}),
             },
           };
         }),
