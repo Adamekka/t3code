@@ -4829,6 +4829,93 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("normalizes OpenCode grep lifecycle events for standard search presentation", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-grep");
+      const input = { pattern: "proactive", path: "/workspace/AGENTS.md" };
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-grep",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-grep",
+              type: "tool",
+              callID: "call-grep",
+              tool: "grep",
+              state: {
+                status: "running",
+                input,
+                title: "Grep",
+                metadata: {},
+                time: { start: 1 },
+              },
+            },
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-grep",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-grep",
+              type: "tool",
+              callID: "call-grep",
+              tool: "grep",
+              state: {
+                status: "completed",
+                input,
+                output: "Found 1 match\n/workspace/SKILL.md:\n  Line 9: proactive",
+                title: "Grep",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "item.updated" || event.type === "item.completed"),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      NodeAssert.equal(events.length, 2);
+      for (const event of events) {
+        if (event.type !== "item.updated" && event.type !== "item.completed") {
+          continue;
+        }
+        const data = event.payload.data as Record<string, unknown>;
+        NodeAssert.equal(event.payload.title, "Grep");
+        NodeAssert.equal(data.toolCallId, "call-grep");
+        NodeAssert.equal(data.kind, "search");
+        NodeAssert.deepEqual(data.rawInput, input);
+      }
+      const completed = events[1];
+      NodeAssert.equal(completed?.type, "item.completed");
+      if (completed?.type === "item.completed") {
+        NodeAssert.equal(completed.payload.detail, "/workspace/SKILL.md:\n  Line 9: proactive");
+      }
+    }),
+  );
+
   it.effect("lets OpenCode own session title generation and emits title metadata updates", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
