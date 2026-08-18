@@ -1610,6 +1610,56 @@ describe("deriveWorkLogEntries", () => {
     });
   });
 
+  it("collapses normalized OpenCode grep events while retaining the input preview", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "opencode-grep-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Grep",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Grep",
+          detail: "Grep",
+          data: {
+            toolCallId: "call-grep",
+            kind: "search",
+            rawInput: { query: "proactive" },
+          },
+        },
+      }),
+      makeActivity({
+        id: "opencode-grep-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Grep",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Grep",
+          data: {
+            toolCallId: "call-grep",
+            kind: "search",
+            rawInput: { query: "proactive" },
+            searchMatches: [
+              { path: "/workspace/SKILL.md", lineNumber: 9, lineContent: "proactive" },
+            ],
+            searchMatchCount: 6,
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "opencode-grep-complete",
+      toolTitle: "Grep",
+      searchQuery: "proactive",
+      searchMatches: [{ path: "/workspace/SKILL.md", lineNumber: 9, lineContent: "proactive" }],
+      searchMatchCount: 6,
+    });
+  });
+
   it("uses completed read-file output previews and still collapses the same tool call", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

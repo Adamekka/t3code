@@ -2202,12 +2202,20 @@ function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boole
 function workEntryPreview(
   workEntry: Pick<
     TimelineWorkEntry,
-    "label" | "toolTitle" | "detail" | "command" | "globPattern" | "todoItems" | "changedFiles"
+    | "label"
+    | "toolTitle"
+    | "detail"
+    | "command"
+    | "globPattern"
+    | "searchQuery"
+    | "todoItems"
+    | "changedFiles"
   >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
+  if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntry.todoItems !== undefined) {
     const todos = workEntry.todoItems;
     if (todos.length === 0) return "No todos";
@@ -2271,7 +2279,30 @@ function buildToolCallExpandedBody(
   } else if (workEntry.command?.trim()) {
     blocks.push(workEntry.command.trim());
   }
-  if (workEntry.detail?.trim()) {
+  if ((workEntry.searchMatches?.length ?? 0) > 0) {
+    const matches = workEntry.searchMatches!;
+    const workspaceLabel = workspaceRoot
+      ? formatWorkspaceRelativePath(workspaceRoot, workspaceRoot)
+      : null;
+    const formatSearchMatchPath = (path: string, lineNumber: number) => {
+      const formatted = formatWorkspaceRelativePath(`${path}:${lineNumber}`, workspaceRoot);
+      return workspaceLabel && formatted.startsWith(`${workspaceLabel}/`)
+        ? formatted.slice(workspaceLabel.length + 1)
+        : formatted;
+    };
+    blocks.push(
+      [
+        ...matches.map(
+          (match) => `${formatSearchMatchPath(match.path, match.lineNumber)}  ${match.lineContent}`,
+        ),
+        ...(workEntry.searchMatchCount && workEntry.searchMatchCount > matches.length
+          ? [
+              `${workEntry.searchMatchCount - matches.length} more ${workEntry.searchMatchCount - matches.length === 1 ? "match" : "matches"}`,
+            ]
+          : []),
+      ].join("\n"),
+    );
+  } else if (workEntry.detail?.trim()) {
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles = workEntryIsRead(workEntry) ? [] : (workEntry.changedFiles ?? []);
