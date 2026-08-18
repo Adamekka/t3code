@@ -4,7 +4,14 @@ import type {
   OrchestrationThreadDetailSnapshot,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { parseOpenCodeReadOutput } from "../provider/OpenCodeToolOutput.ts";
+import {
+  OPEN_CODE_GREP_MATCH_LIMIT,
+  parseOpenCodeGrepOutput,
+  parseOpenCodeReadOutput,
+} from "../provider/OpenCodeToolOutput.ts";
+
+const MAX_PROJECTED_GREP_PATH_LENGTH = 512;
+const MAX_PROJECTED_GREP_LINE_CONTENT_LENGTH = 160;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -386,6 +393,7 @@ export function projectActivityPayload(
   const state = asRecord(data.state);
   const input = asRecord(state?.input);
   const directInput = asRecord(data.input);
+  const rawInput = asRecord(data.rawInput);
   const isReadActivity =
     data.tool === "read" ||
     data.kind === "read" ||
@@ -395,6 +403,8 @@ export function projectActivityPayload(
     data.kind === "glob" ||
     activity.summary.trim().toLowerCase() === "glob";
   const toolName = asTrimmedString(data.tool) ?? asTrimmedString(data.toolName);
+  const isOpenCodeGrepActivity = toolName?.toLowerCase() === "grep";
+  const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
   const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
   const readOutput =
     isReadActivity && typeof payload.detail === "string"
@@ -403,6 +413,12 @@ export function projectActivityPayload(
   const readInputPath =
     isReadActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const readPath = readOutput?.path ?? readInputPath;
+  const grepOutput =
+    isOpenCodeGrepActivity && typeof state?.output === "string"
+      ? parseOpenCodeGrepOutput(state.output)
+      : isOpenCodeGrepActivity && typeof payload.detail === "string"
+        ? parseOpenCodeGrepOutput(payload.detail)
+        : null;
   const globPattern = isGlobActivity
     ? typeof data.pattern === "string"
       ? data.pattern.trim()
@@ -475,6 +491,8 @@ export function projectActivityPayload(
   } else if (isTodoActivity) {
     projectedData.kind = "todo";
     projectedData.todos = todos;
+  } else if (isSearchActivity) {
+    projectedData.kind = "search";
   } else if ("kind" in data) {
     projectedData.kind = data.kind;
   }
@@ -483,6 +501,59 @@ export function projectActivityPayload(
   }
   if (globPattern) {
     projectedData.pattern = globPattern;
+  }
+  if (isSearchActivity) {
+    const searchInput = rawInput ?? input;
+    const searchQuery =
+      asTrimmedString(searchInput?.query) ??
+      asTrimmedString(searchInput?.pattern) ??
+      asTrimmedString(searchInput?.searchTerm);
+    if (searchQuery) {
+      projectedData.rawInput = { query: searchQuery };
+    }
+
+    const rawSearchMatches = grepOutput?.matches ?? data.searchMatches;
+    if (Array.isArray(rawSearchMatches)) {
+      const searchMatches: Array<{
+        path: string;
+        lineNumber: number;
+        lineContent: string;
+      }> = [];
+      for (const rawMatch of rawSearchMatches.slice(0, OPEN_CODE_GREP_MATCH_LIMIT)) {
+        if (searchMatches.length === OPEN_CODE_GREP_MATCH_LIMIT) {
+          break;
+        }
+        const match = asRecord(rawMatch);
+        const path = asTrimmedString(match?.path);
+        const lineNumber = match?.lineNumber;
+        if (
+          !path ||
+          path.length > MAX_PROJECTED_GREP_PATH_LENGTH ||
+          typeof lineNumber !== "number" ||
+          !Number.isSafeInteger(lineNumber) ||
+          lineNumber < 1 ||
+          typeof match?.lineContent !== "string"
+        ) {
+          continue;
+        }
+        const lineContent =
+          match.lineContent.length > MAX_PROJECTED_GREP_LINE_CONTENT_LENGTH
+            ? `${match.lineContent.slice(0, MAX_PROJECTED_GREP_LINE_CONTENT_LENGTH - 3)}...`
+            : match.lineContent;
+        searchMatches.push({ path, lineNumber, lineContent });
+      }
+      if (searchMatches.length > 0) {
+        projectedData.searchMatches = searchMatches;
+        const rawMatchCount = grepOutput?.totalMatches ?? data.searchMatchCount;
+        if (
+          typeof rawMatchCount === "number" &&
+          Number.isSafeInteger(rawMatchCount) &&
+          rawMatchCount >= searchMatches.length
+        ) {
+          projectedData.searchMatchCount = rawMatchCount;
+        }
+      }
+    }
   }
 
   const rawOutput =
@@ -497,6 +568,16 @@ export function projectActivityPayload(
   if (readOutput) {
     if (readOutput.content.trim().length > 0) {
       normalizedPayload.detail = readOutput.content;
+    } else {
+      delete normalizedPayload.detail;
+    }
+  }
+  if (grepOutput && grepOutput.matches.length > 0) {
+    delete normalizedPayload.detail;
+  } else if (isOpenCodeGrepActivity && typeof payload.detail === "string") {
+    const grepDetail = payload.detail.replace(/^Found [0-9]+ match(?:es)?\r?\n/u, "");
+    if (grepDetail.trim().length > 0) {
+      normalizedPayload.detail = grepDetail;
     } else {
       delete normalizedPayload.detail;
     }

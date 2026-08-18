@@ -1304,6 +1304,69 @@ describe("buildThreadFeed", () => {
     );
   });
 
+  it("shows normalized search input while expanding matches", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-search"),
+      projectId: ProjectId.make("project-1"),
+      title: "Search files",
+      activities: [
+        makeActivity({
+          id: EventId.make("search-updated"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Grep",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Grep",
+            detail: "Grep",
+            data: {
+              toolCallId: "call-grep",
+              kind: "search",
+              rawInput: { query: "proactive" },
+            },
+          },
+        }),
+        makeActivity({
+          id: EventId.make("search-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Grep",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            title: "Grep",
+            data: {
+              toolCallId: "call-grep",
+              kind: "search",
+              rawInput: { query: "proactive" },
+              searchMatches: [
+                { path: "/workspace/SKILL.md", lineNumber: 9, lineContent: "proactive" },
+              ],
+              searchMatchCount: 6,
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities).toHaveLength(1);
+    expect(group.activities[0]).toMatchObject({
+      summary: "Grep",
+      detail: "proactive",
+      searchMatchCount: 6,
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe(
+      "/workspace/SKILL.md:9  proactive\n5 more matches",
+    );
+  });
+
   it("defers large tool output expansion until a work row is opened or copied", () => {
     let serializedToolOutputs = 0;
     const activities = Array.from({ length: 5_000 }, (_, index) =>

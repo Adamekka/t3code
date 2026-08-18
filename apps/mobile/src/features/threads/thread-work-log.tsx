@@ -44,6 +44,7 @@ import {
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText";
+import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -374,6 +375,7 @@ interface ThreadWorkLogProps {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly scrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
   readonly iconSubtleColor: ColorValue;
+  readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string, anchorKey: string) => void;
   readonly renderImage: MarkdownImageRenderer;
@@ -389,6 +391,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
         copied={props.copiedRowId === row.id}
         expanded={props.expandedRows[row.id] ?? false}
         iconSubtleColor={props.iconSubtleColor}
+        workspaceRoot={props.workspaceRoot}
         onCopyRow={props.onCopyRow}
         onToggleRow={props.onToggleRow}
         renderImage={props.renderImage}
@@ -402,6 +405,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
       props.onCopyRow,
       props.onToggleRow,
       props.renderImage,
+      props.workspaceRoot,
     ],
   );
 
@@ -660,11 +664,29 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
 ) {
   const { row, expanded } = props;
   const canExpand = row.canExpand;
-  const fullDetail = expanded ? row.getFullDetail() : null;
+  const fullDetail = expanded
+    ? row.searchMatches?.length
+      ? [
+          ...row.searchMatches.map((match) => {
+            const path =
+              resolveWorkspaceRelativeFilePath(props.workspaceRoot, match.path) ?? match.path;
+            return `${path}:${match.lineNumber}  ${match.lineContent}`;
+          }),
+          ...(row.searchMatchCount && row.searchMatchCount > row.searchMatches.length
+            ? [
+                `${row.searchMatchCount - row.searchMatches.length} more ${row.searchMatchCount - row.searchMatches.length === 1 ? "match" : "matches"}`,
+              ]
+            : []),
+        ].join("\n")
+      : row.getFullDetail()
+    : null;
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
+  const detail = compactActivityDetail(row.detail);
   const previewText =
-    toolPresentation?.displayName ?? compactActivityDetail(row.detail) ?? row.summary;
+    toolPresentation?.displayName ??
+    (row.workEntry.searchQuery && detail ? `${row.summary} ${detail}` : detail) ??
+    row.summary;
   const displayText =
     !toolPresentation && expanded && row.workEntry.command?.trim() ? "Command" : previewText;
   const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
