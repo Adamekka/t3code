@@ -228,6 +228,7 @@ interface OpenCodeSessionContext {
   readonly server: OpenCodeServerConnection;
   readonly directory: string;
   readonly openCodeSessionId: string;
+  readonly modelContextLimitBySlug: ReadonlyMap<string, number>;
   readonly pendingPermissions: Map<string, PermissionRequest>;
   readonly pendingQuestions: Map<string, QuestionRequest>;
   readonly messageRoleById: Map<string, "user" | "assistant">;
@@ -844,13 +845,55 @@ export function makeOpenCodeAdapter(
         }
 
         case "message.updated": {
-          context.messageRoleById.set(event.properties.info.id, event.properties.info.role);
-          if (event.properties.info.role === "assistant") {
+          const info = event.properties.info;
+          context.messageRoleById.set(info.id, info.role);
+          if (info.role === "assistant") {
             for (const part of context.partById.values()) {
-              if (part.messageID !== event.properties.info.id) {
+              if (part.messageID !== info.id) {
                 continue;
               }
               yield* emitAssistantTextDelta(context, part, turnId, event);
+            }
+
+            if (info.time?.completed !== undefined && info.tokens) {
+              // Match OpenCode's own overflow calculation so the meter reports
+              // the same context pressure that triggers provider compaction.
+              const usedTokens =
+                info.tokens.total ||
+                info.tokens.input +
+                  info.tokens.output +
+                  info.tokens.cache.read +
+                  info.tokens.cache.write;
+              if (usedTokens > 0) {
+                const cachedInputTokens = info.tokens.cache.read + info.tokens.cache.write;
+                const maxTokens = context.modelContextLimitBySlug.get(
+                  `${info.providerID}/${info.modelID}`,
+                );
+                yield* emit({
+                  ...(yield* buildEventBase({
+                    threadId: context.session.threadId,
+                    turnId,
+                    createdAt: isoFromEpochMs(info.time.completed),
+                    raw: event,
+                  })),
+                  type: "thread.token-usage.updated",
+                  payload: {
+                    usage: {
+                      usedTokens,
+                      lastUsedTokens: usedTokens,
+                      inputTokens: info.tokens.input,
+                      cachedInputTokens,
+                      outputTokens: info.tokens.output,
+                      reasoningOutputTokens: info.tokens.reasoning,
+                      lastInputTokens: info.tokens.input,
+                      lastCachedInputTokens: cachedInputTokens,
+                      lastOutputTokens: info.tokens.output,
+                      lastReasoningOutputTokens: info.tokens.reasoning,
+                      ...(maxTokens !== undefined ? { maxTokens } : {}),
+                    },
+                  },
+                });
+              }
             }
           }
           break;
@@ -1361,12 +1404,35 @@ export function makeOpenCodeAdapter(
                 return { openCodeSession: createdSession.data, created: true };
               });
 
+              const modelContextLimitBySlug = yield* openCodeRuntime
+                .loadOpenCodeInventory(client)
+                .pipe(
+                  Effect.map((inventory) => {
+                    const limits = new Map<string, number>();
+                    for (const provider of inventory.providerList.all) {
+                      for (const model of Object.values(provider.models)) {
+                        if (Number.isSafeInteger(model.limit.context) && model.limit.context > 0) {
+                          limits.set(`${provider.id}/${model.id}`, model.limit.context);
+                        }
+                      }
+                    }
+                    return limits;
+                  }),
+                  // Context metadata must not make a working provider session unusable.
+                  Effect.catch((cause) =>
+                    Effect.logWarning(
+                      `Failed to load OpenCode model context limits: ${cause.detail}`,
+                    ).pipe(Effect.as(new Map<string, number>())),
+                  ),
+                );
+
               return {
                 sessionScope,
                 server,
                 client,
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
+                modelContextLimitBySlug,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -1421,6 +1487,7 @@ export function makeOpenCodeAdapter(
           server: started.server,
           directory,
           openCodeSessionId: started.openCodeSession.id,
+          modelContextLimitBySlug: started.modelContextLimitBySlug,
           pendingPermissions: new Map(),
           pendingQuestions: new Map(),
           partById: new Map(),

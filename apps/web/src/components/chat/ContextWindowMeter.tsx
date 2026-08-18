@@ -25,6 +25,7 @@ export function ContextWindowMeter(props: {
   const dashOffset = circumference * (1 - normalizedPercentage / 100);
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
+  const inlineUsage = `${formatContextWindowTokens(usage.usedTokens)}${usage.maxTokens != null ? `/${formatContextWindowTokens(usage.maxTokens)}` : ""}`;
   const isOverloaded = normalizedPercentage > 90;
   const usageColor = isOverloaded
     ? "var(--color-error)"
@@ -38,9 +39,9 @@ export function ContextWindowMeter(props: {
         closeDelay={0}
         render={
           <Button
-            size="icon-sm"
+            size="compact"
             variant="ghost-muted"
-            className="size-7 rounded-full hover:text-muted-foreground data-pressed:text-muted-foreground"
+            className="rounded-full hover:text-muted-foreground data-pressed:text-muted-foreground"
             aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`
@@ -75,6 +76,7 @@ export function ContextWindowMeter(props: {
                 />
               </svg>
             </span>
+            <span className="text-[11px] tabular-nums">{inlineUsage}</span>
           </Button>
         }
       />
