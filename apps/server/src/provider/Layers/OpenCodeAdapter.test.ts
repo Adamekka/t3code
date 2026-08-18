@@ -29,6 +29,7 @@ import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   OpenCodeRuntime,
   OpenCodeRuntimeError,
+  type OpenCodeInventory,
   type OpenCodeRuntimeShape,
 } from "../opencodeRuntime.ts";
 import {
@@ -74,6 +75,11 @@ const runtimeMock = {
     sessionDirectoryById: new Map<string, string>(),
     sessionUpdateCalls: [] as Array<{ sessionID: string; permission: unknown }>,
     forkCalls: [] as Array<{ sessionID: string; directory?: string }>,
+    inventoryError: null as OpenCodeRuntimeError | null,
+    inventory: {
+      providerList: { connected: [], all: [], default: {} },
+      agents: [],
+    } as OpenCodeInventory,
   },
   reset() {
     this.state.startCalls.length = 0;
@@ -94,6 +100,11 @@ const runtimeMock = {
     this.state.sessionDirectoryById.clear();
     this.state.sessionUpdateCalls.length = 0;
     this.state.forkCalls.length = 0;
+    this.state.inventoryError = null;
+    this.state.inventory = {
+      providerList: { connected: [], all: [], default: {} },
+      agents: [],
+    };
   },
 };
 
@@ -214,13 +225,9 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       },
     }) as unknown as ReturnType<OpenCodeRuntimeShape["createOpenCodeSdkClient"]>,
   loadOpenCodeInventory: () =>
-    Effect.fail(
-      new OpenCodeRuntimeError({
-        operation: "loadOpenCodeInventory",
-        detail: "OpenCodeRuntimeTestDouble.loadOpenCodeInventory not used in this test",
-        cause: null,
-      }),
-    ),
+    runtimeMock.state.inventoryError
+      ? Effect.fail(runtimeMock.state.inventoryError)
+      : Effect.succeed(runtimeMock.state.inventory),
   loadInventoryFromCli: () =>
     Effect.fail(
       new OpenCodeRuntimeError({
@@ -1066,6 +1073,197 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         ["Hello", "lo world", ""],
       );
       NodeAssert.equal(secondUpdate.latestText, "Hellolo world");
+    }),
+  );
+
+  it.effect("emits completed assistant context usage with the model limit", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-token-usage");
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["anthropic"],
+          all: [
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              models: {
+                "claude-sonnet-4-5": {
+                  id: "claude-sonnet-4-5",
+                  name: "Claude Sonnet 4.5",
+                  limit: { context: 200_000, output: 32_000 },
+                },
+              },
+            },
+          ],
+          default: {},
+        },
+        agents: [],
+      } as unknown as OpenCodeInventory;
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            info: {
+              id: "msg-explicit-total",
+              role: "assistant",
+              providerID: "anthropic",
+              modelID: "claude-sonnet-4-5",
+              time: { created: 1_000, completed: 2_000 },
+              tokens: {
+                total: 1_800,
+                input: 200,
+                output: 30,
+                reasoning: 10,
+                cache: { read: 1_000, write: 50 },
+              },
+            },
+          },
+        },
+        {
+          type: "message.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            info: {
+              id: "msg-derived-total",
+              role: "assistant",
+              providerID: "anthropic",
+              modelID: "claude-sonnet-4-5",
+              time: { created: 2_000, completed: 3_000 },
+              tokens: {
+                total: 0,
+                input: 250,
+                output: 40,
+                reasoning: 15,
+                cache: { read: 1_200, write: 60 },
+              },
+            },
+          },
+        },
+        {
+          type: "message.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            info: {
+              id: "msg-zero-usage",
+              role: "assistant",
+              providerID: "anthropic",
+              modelID: "claude-sonnet-4-5",
+              time: { created: 3_000, completed: 4_000 },
+              tokens: {
+                input: 0,
+                output: 0,
+                reasoning: 0,
+                cache: { read: 0, write: 0 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(4),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      const usageEvents = events.filter((event) => event.type === "thread.token-usage.updated");
+      NodeAssert.equal(usageEvents.length, 2);
+      NodeAssert.deepEqual(
+        usageEvents.map((event) =>
+          event.type === "thread.token-usage.updated" ? event.payload.usage : null,
+        ),
+        [
+          {
+            usedTokens: 1_800,
+            lastUsedTokens: 1_800,
+            inputTokens: 200,
+            cachedInputTokens: 1_050,
+            outputTokens: 30,
+            reasoningOutputTokens: 10,
+            lastInputTokens: 200,
+            lastCachedInputTokens: 1_050,
+            lastOutputTokens: 30,
+            lastReasoningOutputTokens: 10,
+            maxTokens: 200_000,
+          },
+          {
+            usedTokens: 1_550,
+            lastUsedTokens: 1_550,
+            inputTokens: 250,
+            cachedInputTokens: 1_260,
+            outputTokens: 40,
+            reasoningOutputTokens: 15,
+            lastInputTokens: 250,
+            lastCachedInputTokens: 1_260,
+            lastOutputTokens: 40,
+            lastReasoningOutputTokens: 15,
+            maxTokens: 200_000,
+          },
+        ],
+      );
+    }),
+  );
+
+  it.effect("keeps usage available when model context inventory fails", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-token-usage-without-inventory");
+      runtimeMock.state.inventoryError = new OpenCodeRuntimeError({
+        operation: "provider.list",
+        detail: "inventory unavailable",
+      });
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            info: {
+              id: "msg-without-inventory",
+              role: "assistant",
+              providerID: "anthropic",
+              modelID: "claude-sonnet-4-5",
+              time: { created: 1_000, completed: 2_000 },
+              tokens: {
+                total: 1_800,
+                input: 200,
+                output: 30,
+                reasoning: 10,
+                cache: { read: 1_000, write: 50 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      NodeAssert.equal(session.status, "ready");
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      const usageEvent = events.find((event) => event.type === "thread.token-usage.updated");
+      NodeAssert.equal(usageEvent?.type, "thread.token-usage.updated");
+      if (usageEvent?.type === "thread.token-usage.updated") {
+        NodeAssert.equal(usageEvent.payload.usage.usedTokens, 1_800);
+        NodeAssert.equal(usageEvent.payload.usage.maxTokens, undefined);
+      }
     }),
   );
 
