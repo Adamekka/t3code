@@ -6,6 +6,7 @@ import { AppText as Text } from "../../components/AppText";
 import { scaledTypographyLineHeight } from "../../lib/appearancePreferences";
 import { cn } from "../../lib/cn";
 import type { ThreadFeedActivity } from "../../lib/threadActivity";
+import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import { useThemeColor } from "../../lib/useThemeColor";
 import Animated, { FadeIn } from "react-native-reanimated";
@@ -125,6 +126,7 @@ export function ThreadWorkLog(props: {
   readonly copiedRowId: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly iconSubtleColor: import("react-native").ColorValue;
+  readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string) => void;
 }) {
@@ -152,7 +154,23 @@ export function ThreadWorkLog(props: {
         {rows.map((row) => {
           const expanded = props.expandedRows[row.id] ?? false;
           const canExpand = row.canExpand;
-          const fullDetail = expanded ? row.getFullDetail() : null;
+          const fullDetail = expanded
+            ? row.searchMatches?.length
+              ? [
+                  ...row.searchMatches.map((match) => {
+                    const path =
+                      resolveWorkspaceRelativeFilePath(props.workspaceRoot, match.path) ??
+                      match.path;
+                    return `${path}:${match.lineNumber}  ${match.lineContent}`;
+                  }),
+                  ...(row.searchMatchCount && row.searchMatchCount > row.searchMatches.length
+                    ? [
+                        `${row.searchMatchCount - row.searchMatches.length} more ${row.searchMatchCount - row.searchMatches.length === 1 ? "match" : "matches"}`,
+                      ]
+                    : []),
+                ].join("\n")
+              : row.getFullDetail()
+            : null;
           const displayText = row.detail ? `${row.summary} ${row.detail}` : row.summary;
           const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
 

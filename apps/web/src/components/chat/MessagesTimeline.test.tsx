@@ -991,6 +991,38 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("/workspace/skills/js-ts/SKILL.md");
   });
 
+  it("shows search input while keeping matches in the expanded body", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-search",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-search",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Grep",
+              toolTitle: "Grep",
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+              searchQuery: "proactive",
+              searchMatches: [
+                { path: "/workspace/SKILL.md", lineNumber: 9, lineContent: "proactive" },
+              ],
+              searchMatchCount: 6,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Grep - proactive"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("/workspace/SKILL.md");
+  });
+
   it("formats TodoWrite as a concise expandable todo row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
