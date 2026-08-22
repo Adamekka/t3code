@@ -2461,7 +2461,7 @@ function liveWorkEntryLabel(
     return "Running command";
   }
 
-  return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  return workEntryDisplayText(workEntry, workspaceRoot);
 }
 
 function buildToolCallExpandedBody(
@@ -2564,6 +2564,20 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
+}
+
+function workEntryDisplayText(
+  workEntry: TimelineWorkEntry,
+  workspaceRoot: string | undefined,
+): string {
+  const preview = workEntryPreview(workEntry, workspaceRoot);
+  const heading = toolWorkEntryHeading(workEntry);
+  const keepsHeading =
+    workEntryIsTodo(workEntry) ||
+    workEntryIsRead(workEntry) ||
+    workEntryIsGlob(workEntry) ||
+    workEntry.searchQuery !== undefined;
+  return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
 }
 
 /**
@@ -2691,10 +2705,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
-  const preview = workEntryPreview(workEntry, workspaceRoot);
-  const heading = toolWorkEntryHeading(workEntry);
-  const displayText =
-    workEntryIsTodo(workEntry) && preview ? `${heading} - ${preview}` : preview ?? heading;
+  const displayText = workEntryDisplayText(workEntry, workspaceRoot);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   const canExpand = expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
