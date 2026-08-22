@@ -380,6 +380,25 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("normalizes OpenCode directory entry envelopes", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        detail:
+          "<path>/workspace</path>\n<type>directory</type>\n<entries>\n.git/\nAGENTS.md\npackage.json\n</entries>",
+        data: { tool: "read" },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      ".git/\nAGENTS.md\npackage.json",
+    );
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "read",
+      files: [{ path: "/workspace" }],
+    });
+  });
+
   it("normalizes cached historical Read rows after tool metadata was projected away", () => {
     const projected = projectActivityPayload({
       ...activity({
