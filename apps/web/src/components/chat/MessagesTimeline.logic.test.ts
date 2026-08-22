@@ -546,7 +546,7 @@ describe("deriveMessagesTimelineRows", () => {
       "user-entry",
       "assistant-first-entry",
       "turn-fold:turn-1",
-      "work-toggle:work-entry-1",
+      "work-1",
       "assistant-final-entry",
     ]);
     expect(
@@ -940,7 +940,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
-  it("summarizes a tool run after commentary starts a new run", () => {
+  it("keeps a completed tool row after commentary starts a new run", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1000,10 +1000,9 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "message", "work-live"]);
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 1,
-      summary: "Ran 1 command",
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "completed-command" }],
     });
   });
 
@@ -1067,11 +1066,13 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live", "message", "work-live"]);
-    expect(rows.filter((row) => row.kind === "work-live").map((row) => row.entry.id)).toEqual([
-      "first-running",
-      "second-running",
-    ]);
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "first-running" }],
+    });
+    expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
+      entry: { id: "second-running" },
+    });
   });
 
   it("does not revive stale in-progress tools before a fresh send has a turn id", () => {
@@ -1365,7 +1366,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.showAssistantCopyButton).toBe(false);
   });
 
-  it("models work log overflow expansion as inserted list rows", () => {
+  it("keeps every tool in a run as its own row", () => {
     const timelineEntries = [
       {
         id: "work-entry-1",
@@ -1418,23 +1419,9 @@ describe("deriveMessagesTimelineRows", () => {
       expandedWorkGroupIds: new Set(["work-group:work-entry-1"]),
     });
 
-    expect(collapsedRows.map((row) => row.id)).toEqual(["work-toggle:work-entry-1"]);
-    expect(collapsedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      groupId: "work-group:work-entry-1",
-      hiddenCount: 3,
-      expanded: false,
-      onlyToolEntries: true,
-      summary: "Read 1 file and used 2 tools",
-    });
-    expect(expandedRows.map((row) => row.id)).toEqual([
-      "work-toggle:work-entry-1",
-      "work-1",
-      "work-2",
-      "work-3",
-    ]);
-    expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      expanded: true,
-    });
+    expect(collapsedRows.map((row) => row.id)).toEqual(["work-1", "work-2", "work-3"]);
+    expect(expandedRows.map((row) => row.id)).toEqual(["work-1", "work-2", "work-3"]);
+    expect(collapsedRows.every((row) => row.kind === "work")).toBe(true);
   });
 
   it.each([
@@ -1474,10 +1461,10 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each([
-    ["recovered", ["failed", "completed"], false],
-    ["ending in failure", ["completed", "failed"], true],
-    ["failed", ["failed", "failed"], true],
-  ] as const)("uses the final call for %s tool groups", (_, statuses, hasFailure) => {
+    ["recovered", ["failed", "completed"]],
+    ["ending in failure", ["completed", "failed"]],
+    ["failed", ["failed", "failed"]],
+  ] as const)("keeps individual statuses for %s tool runs", (_, statuses) => {
     const timelineEntries = statuses.map((status, index) => ({
       id: `work-entry-${index}`,
       kind: "work" as const,
@@ -1500,10 +1487,10 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 2,
-      hasFailure,
-    });
+    expect(rows.map((row) => row.kind)).toEqual(["work", "work"]);
+    expect(
+      rows.map((row) => (row.kind === "work" ? row.groupedEntries[0]?.toolLifecycleStatus : null)),
+    ).toEqual(statuses);
   });
 
   it.each([
