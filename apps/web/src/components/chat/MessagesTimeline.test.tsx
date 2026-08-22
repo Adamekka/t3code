@@ -1008,7 +1008,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Read 1 file");
+    expect(markup).toContain('aria-label="Read - /workspace/AGENTS.md"');
     expect(markup).toContain("lucide-eye");
     expect(markup).not.toContain("&lt;path&gt;");
     expect(markup).not.toContain("1: # Instructions");
@@ -1036,7 +1036,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Read 1 file");
+    expect(markup).toContain('aria-label="Read"');
     expect(markup).toContain("lucide-eye");
     expect(markup).not.toContain("contents without a recoverable path");
   });
@@ -1064,7 +1064,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Glob **/SKILL.md");
+    expect(markup).toContain('aria-label="Glob - **/SKILL.md"');
+    expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("/workspace/skills/js-ts/SKILL.md");
   });
 
@@ -1128,6 +1129,7 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('aria-label="Update todos - 1/2 completed"');
     expect(markup).toContain('aria-label="Open Todos"');
+    expect(markup).not.toContain("Changed 1 file");
     expect(markup).not.toContain("Todowrite");
     expect(markup).not.toContain("Test TodoWrite");
     expect(markup).not.toContain("&quot;status&quot;");

@@ -54,17 +54,23 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command) return entry.command;
   const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  const displayHeading = `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
   if (entry.searchQuery) {
-    const title = `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
-    return `${title} - ${entry.searchQuery}`;
+    return `${displayHeading} - ${entry.searchQuery}`;
   }
   if (entry.todoItems !== undefined) {
     const completed = entry.todoItems.filter((todo) => todo.status === "completed").length;
     const progress = entry.todoItems.length === 0 ? "No todos" : `${completed}/${entry.todoItems.length} completed`;
     return `Update todos - ${progress}`;
   }
+  if (heading.toLowerCase() === "read") {
+    const [firstPath] = entry.changedFiles ?? [];
+    return firstPath
+      ? `${displayHeading} - ${formatWorkspaceRelativePath(firstPath, workspaceRoot)}`
+      : displayHeading;
+  }
   if (heading.toLowerCase() === "glob") {
-    return entry.globPattern ?? `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+    return entry.globPattern ? `${displayHeading} - ${entry.globPattern}` : displayHeading;
   }
   if (entry.detail) return entry.detail;
   const [firstPath] = entry.changedFiles ?? [];
@@ -74,7 +80,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
       ? path
       : `${path} +${entry.changedFiles!.length - 1} more`;
   }
-  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+  return displayHeading;
 }
 
 export function liveWorkEntryLabel(
@@ -963,6 +969,9 @@ export function deriveMessagesTimelineRows(input: {
       );
       if (visibleGroupedEntries.length > 0) {
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+        const directEntry =
+          visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0] : undefined;
+
         if (activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
@@ -986,22 +995,21 @@ export function deriveMessagesTimelineRows(input: {
             );
           }
         } else if (
-          visibleGroupedEntries.length === 1 &&
-          visibleGroupedEntries[0]?.todoItems !== undefined
+          directEntry &&
+          (directEntry.todoItems !== undefined ||
+            directEntry.globPattern !== undefined ||
+            normalizeCompactToolLabel(
+              directEntry.toolTitle ?? directEntry.label,
+            ).toLowerCase() === "read")
         ) {
-          const todoEntry = visibleGroupedEntries[0]!;
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
             createdAt: timelineEntry.createdAt,
-            groupedEntries: [todoEntry],
+            groupedEntries: [directEntry],
             isExpandedToolGroup: false,
           });
-        } else if (
-          visibleGroupedEntries.length === 1 &&
-          workLogEntryIsToolLike(visibleGroupedEntries[0]!)
-        ) {
-          const singleEntry = visibleGroupedEntries[0]!;
+        } else if (directEntry && workLogEntryIsToolLike(directEntry)) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -1009,9 +1017,9 @@ export function deriveMessagesTimelineRows(input: {
             groupedEntries: visibleGroupedEntries,
             isExpandedToolGroup: false,
             displayLabel:
-              toolGroupAction(singleEntry) === "edit"
+              toolGroupAction(directEntry) === "edit"
                 ? summarizeToolGroup(visibleGroupedEntries)
-                : singleToolCallLabel(singleEntry),
+                : singleToolCallLabel(directEntry),
           });
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
