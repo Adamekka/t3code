@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { MessageId, TurnId } from "@t3tools/contracts";
+import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
@@ -156,8 +157,8 @@ describe("work entry labels", () => {
     ["preview_click", "Clicked in the preview browser", "browser"],
     ["task_status", "Got delegated task status", "t3-code"],
   ] as const)(
-    "uses the completed %s call presentation for a settled legacy tool",
-    (tool, summary, summaryToolIcon) => {
+    "keeps a completed %s call as a direct row with its presentation",
+    (tool, label, icon) => {
       const rows = deriveMessagesTimelineRows({
         timelineEntries: [
           {
@@ -176,9 +177,25 @@ describe("work entry labels", () => {
         turnDiffSummaryByAssistantMessageId: new Map(),
         revertTurnCountByUserMessageId: new Map(),
       });
-      expect(rows).toMatchObject([
-        { kind: "work-toggle", hiddenCount: 1, summary, summaryToolIcon },
-      ]);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        kind: "work",
+        id: "tool-1",
+        groupedEntries: [{ id: "tool-1" }],
+        isExpandedToolGroup: false,
+      });
+
+      const row = rows[0];
+      if (row?.kind !== "work") {
+        throw new Error("Expected a direct work row");
+      }
+      const directEntry = row.groupedEntries[0];
+      if (!directEntry) {
+        throw new Error("Expected the direct work row to contain its tool entry");
+      }
+      expect(workEntryDisplayLabel(directEntry, undefined)).toBe(label);
+      expect(resolveWorkEntryToolPresentation(directEntry)?.icon).toBe(icon);
     },
   );
 });
@@ -737,7 +754,7 @@ describe("deriveMessagesTimelineRows", () => {
       "user-entry",
       "turn-fold:turn-1",
       "assistant-first-entry",
-      "work-toggle:work-entry-1",
+      "work-1",
       "assistant-final-entry",
     ]);
     expect(
@@ -1131,7 +1148,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
-  it("labels a single completed tool call without summarizing it", () => {
+  it("keeps a completed tool call as a direct row after commentary starts a new run", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1191,11 +1208,16 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "message", "work-live"]);
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 1,
-      summary: "rg toolCall",
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    const completedRow = rows.find((row) => row.id === "completed-command");
+    expect(completedRow).toMatchObject({
+      kind: "work",
+      groupedEntries: [{ id: "completed-command" }],
     });
+    if (completedRow?.kind !== "work") {
+      throw new Error("Expected the completed command to be a direct work row");
+    }
+    expect(workEntryDisplayLabel(completedRow.groupedEntries[0]!, undefined)).toBe("rg toolCall");
   });
 
   it("keeps separated in-progress tool runs visible", () => {
@@ -1258,11 +1280,13 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-live", "message", "work-live"]);
-    expect(rows.filter((row) => row.kind === "work-live").map((row) => row.entry.id)).toEqual([
-      "first-running",
-      "second-running",
-    ]);
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "first-running" }],
+    });
+    expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
+      entry: { id: "second-running" },
+    });
   });
 
   it("does not revive stale in-progress tools before a fresh send has a turn id", () => {
@@ -1631,13 +1655,9 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each([
-    ["tools", "tool", "Read 1 file and used 2 tools"],
-    [
-      "tools and status updates",
-      "info",
-      "Read 1 file, received 1 update, and used 1 tool",
-    ],
-  ] as const)("expands %s through the same activity group", (_, middleTone, summary) => {
+    ["tools", "tool"],
+    ["tools and status updates", "info"],
+  ] as const)("keeps every activity in %s as its own row", (_, middleTone) => {
     const timelineEntries = [
       {
         id: "work-entry-1",
@@ -1690,28 +1710,30 @@ describe("deriveMessagesTimelineRows", () => {
       expandedWorkGroupIds: new Set(["work-group:work-entry-1"]),
     });
 
-    expect(collapsedRows.map((row) => row.id)).toEqual(["work-toggle:work-entry-1"]);
-    expect(collapsedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      groupId: "work-group:work-entry-1",
-      hiddenCount: 3,
-      expanded: false,
-      summary,
-    });
-    expect(expandedRows.map((row) => row.id)).toEqual([
-      "work-toggle:work-entry-1",
-      "work-group:work-entry-1:details",
+    expect(collapsedRows).toMatchObject([
+      {
+        id: "work-group:work-entry-1:details",
+        kind: "work",
+        isExpandedToolGroup: true,
+        groupedEntries: timelineEntries.map(({ entry }) => entry),
+      },
     ]);
-    expect(expandedRows.find((row) => row.kind === "work")).toMatchObject({
+    expect(expandedRows).toMatchObject([
+      {
+        id: "work-group:work-entry-1:details",
+        kind: "work",
+        isExpandedToolGroup: true,
+        groupedEntries: timelineEntries.map(({ entry }) => entry),
+      },
+    ]);
+    expect(collapsedRows.find((row) => row.kind === "work")).toMatchObject({
       isExpandedToolGroup: true,
       groupedEntries: timelineEntries.map(({ entry }) => entry),
-    });
-    expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      expanded: true,
     });
   });
 
   it.each([true, false])(
-    "keeps a large expanded tool run inside one timeline item, live=%s",
+    "keeps a large tool run inside one timeline item, live=%s",
     (isWorking) => {
       const turnId = TurnId.make("turn-many-tools");
       const createdAt = "2026-09-01T12:00:00Z";
@@ -1750,7 +1772,9 @@ describe("deriveMessagesTimelineRows", () => {
         timelineEntries.map(({ entry }) => entry.id),
       );
       expect(groupRows[0]?.id).toBe(`${groupId}:details`);
-      expect(deriveMessagesTimelineRows(input).some((row) => row.kind === "work")).toBe(false);
+      expect(deriveMessagesTimelineRows(input).filter((row) => row.kind === "work")).toHaveLength(
+        isWorking ? 0 : 1,
+      );
     },
   );
 
@@ -1791,10 +1815,10 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each([
-    ["recovered", ["failed", "completed"], false],
-    ["ending in failure", ["completed", "failed"], true],
-    ["failed", ["failed", "failed"], true],
-  ] as const)("uses the final call for %s tool groups", (_, statuses, hasFailure) => {
+    ["recovered", ["failed", "completed"]],
+    ["ending in failure", ["completed", "failed"]],
+    ["failed", ["failed", "failed"]],
+  ] as const)("keeps individual statuses for %s tool runs", (_, statuses) => {
     const timelineEntries = statuses.map((status, index) => ({
       id: `work-entry-${index}`,
       kind: "work" as const,
@@ -1817,22 +1841,26 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 2,
-      hasFailure,
-    });
+    expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
+    expect(
+      rows.flatMap((row) =>
+        row.kind === "work"
+          ? row.groupedEntries.map((entry) => entry.toolLifecycleStatus)
+          : [],
+      ),
+    ).toEqual(statuses);
   });
 
   it.each([
-    ["the later success is hidden", ["failed", "completed", "info"], false],
-    ["the later success is visible", ["failed", "info", "completed"], false],
-    ["an error-toned entry recovers", ["error", "info", "completed"], false],
-    ["the final failure is hidden", ["completed", "failed", "info"], true],
-    ["the final failure is visible", ["failed", "info", "failed"], true],
-    ["the only failure is visible", ["completed", "info", "failed"], true],
+    ["the later success follows the failure", ["failed", "completed", "info"]],
+    ["the later success follows an update", ["failed", "info", "completed"]],
+    ["an error-toned entry precedes recovery", ["error", "info", "completed"]],
+    ["the final failure precedes an update", ["completed", "failed", "info"]],
+    ["the final failure follows an update", ["failed", "info", "failed"]],
+    ["the only failure follows an update", ["completed", "info", "failed"]],
   ] as const)(
-    "uses the final tool call for mixed work groups when %s",
-    (_, statuses, hasFailure) => {
+    "keeps individual rows when %s",
+    (_, statuses) => {
       const timelineEntries = statuses.map((status, index) => {
         const id = `work-${index}`;
         const createdAt = `2026-01-01T00:00:0${index}Z`;
@@ -1864,19 +1892,12 @@ describe("deriveMessagesTimelineRows", () => {
         revertTurnCountByUserMessageId: new Map(),
       });
 
-      expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-        hiddenCount: statuses.some((status) => status === "error") ? 2 : 3,
-        summary: statuses.some((status) => status === "error")
-          ? "Received 1 update and used 1 tool"
-          : "Used 2 tools and received 1 update",
-        hasFailure,
-      });
-      if (statuses.some((status) => status === "error")) {
-        expect(rows[0]).toMatchObject({
-          kind: "work",
-          groupedEntries: [{ tone: "error", label: "Command failed" }],
-        });
-      }
+      expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
+      expect(
+        rows.flatMap((row) =>
+          row.kind === "work" ? row.groupedEntries.map((entry) => entry.id) : [],
+        ),
+      ).toEqual(["work-0", "work-1", "work-2"]);
     },
   );
 });

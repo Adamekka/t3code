@@ -1883,7 +1883,7 @@ function WorkGroupToggleTimelineRow({
     >
       <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
         <WorkEntryIcon
-          name={row.summaryToolIcon ?? toolGroupSummaryIconName(row.summaryKind)}
+          name={toolGroupSummaryIconName(row.summaryKind)}
           className="size-4 shrink-0 stroke-[1.8] opacity-70"
         />
       </span>
@@ -2528,8 +2528,6 @@ function buildToolCallExpandedBody(
   const raw = workEntryRawCommand(workEntry);
   if (raw?.trim()) {
     blocks.push(raw.trim());
-  } else if (workEntry.command?.trim()) {
-    blocks.push(workEntry.command.trim());
   }
   if ((workEntry.searchMatches?.length ?? 0) > 0) {
     const matches = workEntry.searchMatches!;
