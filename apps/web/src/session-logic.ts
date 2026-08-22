@@ -808,16 +808,27 @@ export function deriveLatestTodoItems(
     return items;
   }
 
+  const activityById = new Map<string, OrchestrationThreadActivity>(
+    activities.map((activity) => [activity.id, activity]),
+  );
   let latestActivity: OrchestrationThreadActivity | null = null;
   let latest: ReadonlyArray<WorkLogTodoItem> | null = null;
-  for (const activity of activities) {
-    const payload = asRecord(activity.payload);
-    const toolItems = workLogTodoItemsFromPayload(payload);
-    const items = toolItems ?? (activity.kind === "turn.plan.updated" ? planItems(payload) : null);
-    if (
-      items === null ||
-      (latestActivity !== null && compareActivitiesByOrder(latestActivity, activity) > 0)
-    ) {
+  const candidates = [
+    ...deriveWorkLogEntries(activities).flatMap((entry) =>
+      entry.todoItems === undefined
+        ? []
+        : activityById.has(entry.id)
+          ? [{ activity: activityById.get(entry.id)!, items: entry.todoItems }]
+          : [],
+    ),
+    ...activities.flatMap((activity) => {
+      if (activity.kind !== "turn.plan.updated") return [];
+      const items = planItems(asRecord(activity.payload));
+      return items === null ? [] : [{ activity, items }];
+    }),
+  ];
+  for (const { activity, items } of candidates) {
+    if (latestActivity !== null && compareActivitiesByOrder(latestActivity, activity) > 0) {
       continue;
     }
     latestActivity = activity;

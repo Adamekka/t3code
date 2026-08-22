@@ -856,22 +856,30 @@ export function deriveMessagesTimelineRows(input: {
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {
-        const singleEntry =
-          visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0] : undefined;
-        if (
-          singleEntry &&
-          (singleEntry.todoItems !== undefined ||
-            singleEntry.searchQuery !== undefined ||
-            singleEntry.globPattern !== undefined ||
-            normalizeCompactToolLabel(
-              singleEntry.toolTitle ?? singleEntry.label,
-            ).toLowerCase() === "read")
-        ) {
+        const onlyToolEntries = visibleGroupedEntries.every(
+          (entry) =>
+            workLogEntryIsToolLike(entry) &&
+            entry.agentSpawn === undefined &&
+            entry.todoItems === undefined &&
+            entry.tone !== "error",
+        );
+        if (onlyToolEntries) {
+          for (const workEntry of visibleGroupedEntries) {
+            nextRows.push({
+              kind: "work",
+              id: workEntry.id,
+              createdAt: workEntry.createdAt,
+              groupedEntries: [workEntry],
+              isExpandedToolGroupEntry: false,
+              isLastExpandedToolGroupEntry: false,
+            });
+          }
+        } else if (visibleGroupedEntries.length === 1) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
             createdAt: timelineEntry.createdAt,
-            groupedEntries: [singleEntry],
+            groupedEntries: [visibleGroupedEntries[0]!],
             isExpandedToolGroupEntry: false,
             isLastExpandedToolGroupEntry: false,
           });
