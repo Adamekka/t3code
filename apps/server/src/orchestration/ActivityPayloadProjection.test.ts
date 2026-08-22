@@ -97,6 +97,29 @@ describe("projectActivityPayload", () => {
     expect(JSON.stringify(acp.payload).length).toBeLessThan(500);
   });
 
+  it.each(["failed", "declined"] as const)(
+    "preserves a tool item's %s status when the outer payload says completed",
+    (status) => {
+      const projected = projectActivityPayload(
+        activity({
+          itemType: "command_execution",
+          status: "completed",
+          data: {
+            item: {
+              status,
+              command: "vp test run",
+            },
+          },
+        }),
+      );
+
+      expect(projected.payload).toMatchObject({
+        status,
+        data: { item: { command: "vp test run" } },
+      });
+    },
+  );
+
   it("normalizes Claude and OpenCode command inputs before slimming provider data", () => {
     const claude = projectActivityPayload(
       activity({

@@ -865,6 +865,15 @@ export function deriveMessagesTimelineRows(input: {
             entry.todoItems === undefined &&
             entry.tone !== "error",
         );
+        const singleToolEntry =
+          visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0]! : null;
+        const showSingleToolEntry =
+          singleToolEntry !== null &&
+          (singleToolEntry.searchQuery !== undefined ||
+            singleToolEntry.globPattern !== undefined ||
+            normalizeCompactToolLabel(
+              singleToolEntry.toolTitle ?? singleToolEntry.label,
+            ).toLowerCase() === "read");
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
         if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
@@ -891,7 +900,7 @@ export function deriveMessagesTimelineRows(input: {
               });
             }
           }
-        } else if (onlyToolEntries) {
+        } else if (onlyToolEntries && !showSingleToolEntry) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
