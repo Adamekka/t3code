@@ -832,25 +832,27 @@ export function deriveMessagesTimelineRows(input: {
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {
-        const singleEntry =
-          visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0] : undefined;
-        if (
-          singleEntry &&
-          (singleEntry.todoItems !== undefined ||
-            singleEntry.searchQuery !== undefined ||
-            singleEntry.globPattern !== undefined ||
-            normalizeCompactToolLabel(
-              singleEntry.toolTitle ?? singleEntry.label,
-            ).toLowerCase() === "read")
-        ) {
+        const containsToolEntry = visibleGroupedEntries.some(workLogEntryIsToolLike);
+        const containsTodoEntry = visibleGroupedEntries.some(
+          (entry) => entry.todoItems !== undefined,
+        );
+        if (visibleGroupedEntries.length === 1) {
           nextRows.push({
             kind: "work",
-            id: timelineEntry.id,
+            id: visibleGroupedEntries[0]!.id,
             createdAt: timelineEntry.createdAt,
-            groupedEntries: [singleEntry],
+            groupedEntries: [visibleGroupedEntries[0]!],
             isExpandedToolGroup: false,
           });
           hasActivityRow = true;
+        } else if (containsToolEntry && !containsTodoEntry) {
+          nextRows.push(
+            expandedWorkGroupRow(
+              workGroupId(timelineEntry.id, timelineEntry.entry),
+              timelineEntry.createdAt,
+              visibleGroupedEntries,
+            ),
+          );
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;

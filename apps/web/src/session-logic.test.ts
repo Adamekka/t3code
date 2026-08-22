@@ -701,6 +701,87 @@ describe("deriveLatestTodoItems", () => {
     ).toEqual([{ content: "Finished", status: "completed" }]);
   });
 
+  it("uses the lifecycle-collapsed TodoWrite state shown in the timeline", () => {
+    expect(
+      deriveLatestTodoItems([
+        makeActivity({
+          id: "todos-running",
+          kind: "tool.updated",
+          sequence: 1,
+          payload: {
+            toolCallId: "todo-call",
+            data: {
+              kind: "todo",
+              todos: [{ content: "Test todo item 1", status: "pending" }],
+            },
+          },
+        }),
+        makeActivity({
+          id: "todos-completed",
+          kind: "tool.completed",
+          sequence: 2,
+          payload: {
+            toolCallId: "todo-call",
+            data: {
+              kind: "todo",
+              todos: [
+                { content: "Test todo item 1", status: "inProgress" },
+                { content: "Test todo item 2", status: "pending" },
+                { content: "Test todo item 3", status: "completed" },
+              ],
+            },
+          },
+        }),
+      ]),
+    ).toEqual([
+      { content: "Test todo item 1", status: "inProgress" },
+      { content: "Test todo item 2", status: "pending" },
+      { content: "Test todo item 3", status: "completed" },
+    ]);
+  });
+
+  it("orders a collapsed TodoWrite by its terminal activity", () => {
+    const activities = [
+      makeActivity({
+        id: "todos-running",
+        kind: "tool.updated",
+        sequence: 1,
+        payload: {
+          toolCallId: "todo-call",
+          data: { kind: "todo", todos: [{ content: "Old", status: "inProgress" }] },
+        },
+      }),
+      makeActivity({
+        id: "plan-between",
+        kind: "turn.plan.updated",
+        sequence: 2,
+        payload: { plan: [{ step: "Intermediate", status: "pending" }] },
+      }),
+      makeActivity({
+        id: "todos-completed",
+        kind: "tool.completed",
+        sequence: 3,
+        payload: {
+          toolCallId: "todo-call",
+          data: { kind: "todo", todos: [{ content: "Newest", status: "completed" }] },
+        },
+      }),
+    ];
+
+    expect(deriveLatestTodoItems(activities)).toEqual([{ content: "Newest", status: "completed" }]);
+    expect(
+      deriveLatestTodoItems([
+        ...activities,
+        makeActivity({
+          id: "plan-after",
+          kind: "turn.plan.updated",
+          sequence: 4,
+          payload: { plan: [{ step: "Later plan", status: "inProgress" }] },
+        }),
+      ]),
+    ).toEqual([{ content: "Later plan", status: "inProgress" }]);
+  });
+
   it("ignores proposed plans", () => {
     expect(
       deriveLatestTodoItems([
