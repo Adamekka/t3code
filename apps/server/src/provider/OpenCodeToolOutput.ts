@@ -20,18 +20,29 @@ export const OPEN_CODE_GREP_MATCH_LIMIT = 5;
 
 export function parseOpenCodeReadOutput(output: string): OpenCodeReadOutput | null {
   const match =
-    /^<path>([^\r\n]+)<\/path>\r?\n<type>(file|directory)<\/type>\r?\n<content>(?:\r?\n)?/u.exec(
+    /^<path>([^\r\n]+)<\/path>\r?\n<type>(file|directory)<\/type>\r?\n<(content|entries)>(?:\r?\n)?/u.exec(
       output,
     );
   const path = match?.[1]?.trim();
   const type = match?.[2];
-  if (!match || !path || (type !== "file" && type !== "directory")) {
+  const bodyTag = match?.[3];
+  if (
+    !match ||
+    !path ||
+    (type !== "file" && type !== "directory") ||
+    (bodyTag !== "content" && bodyTag !== "entries")
+  ) {
     return null;
   }
   // Historical activity details may end before the closing tag because ingestion truncates them.
   const content = output
     .slice(match[0].length)
-    .replace(/(?:\r?\n)?<\/content>[ \t]*(?:\r?\n)*$/u, "");
+    .replace(
+      bodyTag === "content"
+        ? /(?:\r?\n)?<\/content>[ \t]*(?:\r?\n)*$/u
+        : /(?:\r?\n)?<\/entries>[ \t]*(?:\r?\n)*$/u,
+      "",
+    );
   return { path, type, content };
 }
 

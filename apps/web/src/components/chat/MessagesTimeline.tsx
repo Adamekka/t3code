@@ -2478,8 +2478,6 @@ function buildToolCallExpandedBody(
   const raw = workEntryRawCommand(workEntry);
   if (raw?.trim()) {
     blocks.push(raw.trim());
-  } else if (workEntry.command?.trim()) {
-    blocks.push(workEntry.command.trim());
   }
   if ((workEntry.searchMatches?.length ?? 0) > 0) {
     const matches = workEntry.searchMatches!;
