@@ -1456,6 +1456,42 @@ describe("deriveMessagesTimelineRows", () => {
   });
 
   it.each([
+    ["Read", { changedFiles: ["/workspace/AGENTS.md"] }],
+    ["Glob", { globPattern: "**/SKILL.md" }],
+    ["Grep", { searchQuery: "proactive" }],
+  ] as const)("keeps a singleton %s tool as a direct row", (label, fields) => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: `entry-${label.toLowerCase()}`,
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: `work-${label.toLowerCase()}`,
+            createdAt: "2026-01-01T00:00:01Z",
+            label,
+            toolTitle: label,
+            tone: "tool",
+            itemType: "dynamic_tool_call",
+            ...fields,
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows).toMatchObject([
+      {
+        kind: "work",
+        groupedEntries: [{ id: `work-${label.toLowerCase()}` }],
+      },
+    ]);
+  });
+
+  it.each([
     ["recovered", ["failed", "completed"], false],
     ["ending in failure", ["completed", "failed"], true],
     ["failed", ["failed", "failed"], true],

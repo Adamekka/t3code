@@ -351,7 +351,7 @@ export function projectActivityPayload(
   }
 
   const itemStatus = asRecord(data.item)?.status;
-  const statusAdjustedPayload =
+  const statusProjectedPayload =
     payload.status === "completed" && (itemStatus === "failed" || itemStatus === "declined")
       ? { ...payload, status: itemStatus }
       : payload;
@@ -360,7 +360,7 @@ export function projectActivityPayload(
     return {
       ...activity,
       payload: {
-        ...statusAdjustedPayload,
+        ...statusProjectedPayload,
         data: projectMcpToolCallData(data),
       },
     };
@@ -531,7 +531,7 @@ export function projectActivityPayload(
     projectedData.rawOutput = rawOutput;
   }
 
-  const projectedPayload = { ...statusAdjustedPayload };
+  const projectedPayload = { ...statusProjectedPayload };
   if (readOutput) {
     if (readOutput.content.trim().length > 0) {
       projectedPayload.detail = readOutput.content;
