@@ -10,6 +10,8 @@ This repository is a fork of T3 Code focused on first-class OpenCode support and
 
 Upstream rebases and merge conflicts are routine. When resolving them, preserve this fork's features and fixes over conflicting upstream behavior. Do not resolve a conflict by adapting fork tests to an upstream regression. Trace the intended user-visible behavior, keep the fork behavior working, and add or retain regression coverage for it.
 
+Keep tool activity individually readable in the timeline. Each tool call should retain its own row, label, and icon instead of being collapsed into a combined tool summary.
+
 ## What makes T3 Code special?
 
 We have over 200,000 users who love T3 Code. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.

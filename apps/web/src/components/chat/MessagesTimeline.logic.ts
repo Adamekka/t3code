@@ -7,7 +7,6 @@ import {
   omitSupersededLifecycleMarkers,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
-  toolGroupAction,
   toolGroupSummaryKind,
   workEntryViewedImagePath,
   type ToolGroupSummaryKind,
@@ -37,20 +36,9 @@ export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
 export const TIMELINE_CONTENT_MAX_WIDTH = 768;
 export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
-function singleToolCallLabel(entry: WorkLogEntry): string {
-  if (toolGroupAction(entry) === "read" || entry.globPattern?.trim() || entry.searchQuery?.trim()) {
-    return summarizeToolGroup([entry]);
-  }
-  const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
-  if (toolPresentation) return toolPresentation.displayName;
-  const command = entry.command?.trim();
-  if (command) return command;
-  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
-  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
-}
-
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
-  const toolPresentation = resolveWorkEntryToolPresentation(entry);
+  // Live rows resolve their active state before using this settled-row label.
+  const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command) return entry.command;
   const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
@@ -718,10 +706,7 @@ function attachTrailingToolGroupsToAssistant(
         candidate.kind === "work" &&
         candidate.groupedEntries.some((entry) => entry.turnId === turnId)
       ) {
-        if (
-          !candidate.isExpandedToolGroup &&
-          candidate.groupedEntries.some(workLogEntryIsToolLike)
-        ) {
+        if (candidate.groupedEntries.some(workLogEntryIsToolLike)) {
           hasTrailingToolGroup = true;
         }
         if (hasTrailingToolGroup) {
@@ -968,114 +953,90 @@ export function deriveMessagesTimelineRows(input: {
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {
-        const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-        const directEntry =
-          visibleGroupedEntries.length === 1 ? visibleGroupedEntries[0] : undefined;
+        const containsToolEntry = visibleGroupedEntries.some(workLogEntryIsToolLike);
+        const containsTodoEntry = visibleGroupedEntries.some(
+          (entry) => entry.todoItems !== undefined,
+        );
 
-        if (activeInProgressToolEntries.length > 0) {
-          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
-
-          nextRows.push({
-            kind: "work-live",
-            id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
-            createdAt: timelineEntry.createdAt,
-            entry: latestActiveToolEntry,
-            groupedEntries: visibleGroupedEntries,
-            groupId,
-            expanded,
-            active: true,
-          });
-          hasActivityRow = true;
-
-          if (expanded) {
-            nextRows.push(
-              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
-            );
-          }
-        } else if (
-          directEntry &&
-          (directEntry.todoItems !== undefined ||
-            directEntry.globPattern !== undefined ||
-            normalizeCompactToolLabel(
-              directEntry.toolTitle ?? directEntry.label,
-            ).toLowerCase() === "read")
-        ) {
+        if (visibleGroupedEntries.length === 1) {
+          const directEntry = visibleGroupedEntries[0]!;
           nextRows.push({
             kind: "work",
-            id: timelineEntry.id,
+            id: directEntry.id,
             createdAt: timelineEntry.createdAt,
             groupedEntries: [directEntry],
             isExpandedToolGroup: false,
           });
-        } else if (directEntry && workLogEntryIsToolLike(directEntry)) {
-          nextRows.push({
-            kind: "work",
-            id: timelineEntry.id,
-            createdAt: timelineEntry.createdAt,
-            groupedEntries: visibleGroupedEntries,
-            isExpandedToolGroup: false,
-            displayLabel:
-              toolGroupAction(directEntry) === "edit"
-                ? summarizeToolGroup(visibleGroupedEntries)
-                : singleToolCallLabel(directEntry),
-          });
+        } else if (containsToolEntry && !containsTodoEntry) {
+          nextRows.push(
+            expandedWorkGroupRow(
+              workGroupId(timelineEntry.id, timelineEntry.entry),
+              timelineEntry.createdAt,
+              visibleGroupedEntries,
+            ),
+          );
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
-          const primarySourceEntry = visibleGroupedEntries.find(
-            (entry) => entry.toolSource !== undefined,
-          );
-          const primarySourceKey = primarySourceEntry?.toolSource?.key;
-          const primarySourceIcon = primarySourceKey
-            ? (visibleGroupedEntries.find(
-                (entry) =>
-                  entry.toolSource?.key === primarySourceKey && entry.toolIcon !== undefined,
-              )?.toolIcon ?? primarySourceEntry?.toolSource?.icon)
-            : undefined;
-          const groupToolSurface =
-            primarySourceEntry?.toolSurface ??
-            visibleGroupedEntries.findLast((entry) => entry.toolSurface !== undefined)?.toolSurface;
-          const groupToolIcon =
-            primarySourceIcon ??
-            visibleGroupedEntries.findLast((entry) => entry.toolIcon !== undefined)?.toolIcon;
-          const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
-          const singleEntry =
-            visibleGroupedEntries.length === 1 ? (visibleGroupedEntries[0] ?? null) : null;
-          const usesSingleToolCallLabel =
-            singleEntry !== null &&
-            workLogEntryIsToolLike(singleEntry) &&
-            toolGroupAction(singleEntry) !== "edit";
-          const summaryToolIcon = usesSingleToolCallLabel
-            ? resolveWorkEntryToolPresentation(singleEntry, "completed")?.icon
-            : undefined;
-          nextRows.push({
-            kind: "work-toggle",
-            id: `work-toggle:${timelineEntry.id}`,
-            createdAt: timelineEntry.createdAt,
-            turnId: timelineEntry.entry.turnId ?? null,
-            groupId,
-            hiddenCount: visibleGroupedEntries.length,
-            expanded,
-            summary: usesSingleToolCallLabel
-              ? singleToolCallLabel(singleEntry)
-              : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
-                ? singleEntry.label
-                : summarizeToolGroup(visibleGroupedEntries),
-            summaryKind,
-            ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
-            ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
-            ...(summaryToolIcon ? { summaryToolIcon } : {}),
-            hasFailure:
-              latestToolEntry !== undefined &&
-              workEntryDisplayIndicatesToolFailure(latestToolEntry),
-          });
-          if (expanded) {
-            nextRows.push(
-              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+          const activeEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+          if (activeEntries.length > 0) {
+            nextRows.push({
+              kind: "work-live",
+              id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
+              createdAt: timelineEntry.createdAt,
+              entry: activeEntries.at(-1)!,
+              groupedEntries: visibleGroupedEntries,
+              groupId,
+              expanded,
+              active: true,
+            });
+            hasActivityRow = true;
+            if (expanded) {
+              nextRows.push(
+                expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+              );
+            }
+          } else {
+            const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+            const primarySourceEntry = visibleGroupedEntries.find(
+              (entry) => entry.toolSource !== undefined,
             );
+            const primarySourceKey = primarySourceEntry?.toolSource?.key;
+            const primarySourceIcon = primarySourceKey
+              ? (visibleGroupedEntries.find(
+                  (entry) =>
+                    entry.toolSource?.key === primarySourceKey && entry.toolIcon !== undefined,
+                )?.toolIcon ?? primarySourceEntry?.toolSource?.icon)
+              : undefined;
+            const groupToolSurface =
+              primarySourceEntry?.toolSurface ??
+              visibleGroupedEntries.findLast((entry) => entry.toolSurface !== undefined)
+                ?.toolSurface;
+            const groupToolIcon =
+              primarySourceIcon ??
+              visibleGroupedEntries.findLast((entry) => entry.toolIcon !== undefined)?.toolIcon;
+            const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
+            nextRows.push({
+              kind: "work-toggle",
+              id: `work-toggle:${timelineEntry.id}`,
+              createdAt: timelineEntry.createdAt,
+              turnId: timelineEntry.entry.turnId ?? null,
+              groupId,
+              hiddenCount: visibleGroupedEntries.length,
+              expanded,
+              summary: summarizeToolGroup(visibleGroupedEntries),
+              summaryKind,
+              ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
+              ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
+              hasFailure:
+                latestToolEntry !== undefined &&
+                workEntryDisplayIndicatesToolFailure(latestToolEntry),
+            });
+            if (expanded) {
+              nextRows.push(
+                expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+              );
+            }
           }
         }
       }
