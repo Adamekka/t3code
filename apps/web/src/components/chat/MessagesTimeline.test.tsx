@@ -1205,7 +1205,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&quot;status&quot;");
   });
 
-  it("summarizes changed files in one line", () => {
+  it("shows a file change as its own row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1227,11 +1227,12 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Changed 1 file");
+    expect(markup).toContain("t3code/apps/web/src/session-logic.ts");
+    expect(markup).toContain("lucide-square-pen");
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
   });
 
-  it("keeps mixed-success tool groups neutral", () => {
+  it("keeps mixed-success tools as separate rows", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1266,11 +1267,12 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Ran 2 commands");
-    expect(markup).not.toContain('aria-label="Tool call failed"');
+    expect(markup).toContain("Run search");
+    expect(markup).toContain("Run tests");
+    expect(markup).toContain('aria-label="Tool call failed"');
   });
 
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
+  it("shows failure on the failed tool row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1305,15 +1307,15 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Ran 2 commands");
+    expect(markup).toContain("Run tests");
+    expect(markup).toContain("Run lint");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).not.toContain("text-destructive");
-    // The failure stays discoverable for screen readers.
-    expect(markup).toContain("tool call failed");
+    expect(markup).toContain('aria-label="Tool call failed"');
   });
 
-  it("keeps mixed work logs neutral after a later tool call succeeds", () => {
+  it("keeps mixed work logs as separate rows", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1359,8 +1361,10 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Ran 2 commands and received 1 update");
-    expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
+    expect(markup).toContain("Run search");
+    expect(markup).toContain("Status updated");
+    expect(markup).toContain("Run tests");
+    expect(markup).toContain('aria-label="Tool call failed"');
   });
 
   it("shows the animated one-line label for a live tool group", () => {
@@ -1575,7 +1579,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-testid="file-diff"');
   });
 
-  it("keeps failed lifecycle entries discoverable in mixed activity summaries", () => {
+  it("keeps failed lifecycle entries discoverable beside status updates", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1608,7 +1612,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Received 1 update and used 1 tool, tool call failed"');
+    expect(markup).toContain("Status updated");
+    expect(markup).toContain("Glob");
+    expect(markup).toContain("tool call failed");
     // Ordinary tool failures render muted, not red.
     expect(markup).not.toContain("text-destructive");
   });
