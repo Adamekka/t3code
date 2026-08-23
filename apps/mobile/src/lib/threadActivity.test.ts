@@ -598,6 +598,80 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toBe(markdown);
   });
 
+  it("shows Task descriptions while retaining normalized Markdown detail", () => {
+    const markdown = "## Result\n\nFound it.";
+    const thread = makeThread({
+      id: ThreadId.make("thread-task-tool"),
+      projectId: ProjectId.make("project-1"),
+      title: "Run task",
+      activities: [
+        makeActivity({
+          id: EventId.make("task-tool-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "task",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "collab_agent_tool_call",
+            status: "completed",
+            detail: markdown,
+            data: {
+              kind: "task",
+              description: "Trace task flow",
+              detailFormat: "markdown",
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Task - Trace task flow",
+      detail: null,
+      taskDetailIsMarkdown: true,
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe(markdown);
+  });
+
+  it("keeps Task Markdown out of the compact row when its description is missing", () => {
+    const markdown = "## Result\n\nFound it.";
+    const thread = makeThread({
+      id: ThreadId.make("thread-task-tool-without-description"),
+      projectId: ProjectId.make("project-1"),
+      title: "Run task",
+      activities: [
+        makeActivity({
+          id: EventId.make("task-tool-without-description"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "task",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "collab_agent_tool_call",
+            status: "completed",
+            detail: markdown,
+            data: { kind: "task", detailFormat: "markdown" },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({ summary: "Task", detail: null });
+    expect(group.activities[0]?.getFullDetail()).toBe(markdown);
+  });
+
   it("keeps failed Skill detail as plain text", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-failed-skill"),
