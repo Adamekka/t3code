@@ -2341,6 +2341,12 @@ function workEntryIsSkill(workEntry: Pick<TimelineWorkEntry, "skillName">): bool
   return workEntry.skillName !== undefined;
 }
 
+function workEntryIsOpenCodeTask(
+  workEntry: Pick<TimelineWorkEntry, "taskDescription" | "taskDetailIsMarkdown">,
+): boolean {
+  return workEntry.taskDescription !== undefined || workEntry.taskDetailIsMarkdown === true;
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2355,6 +2361,7 @@ function workEntryPreview(
     | "globPattern"
     | "searchQuery"
     | "skillName"
+    | "taskDescription"
     | "todoItems"
     | "changedFiles"
   >,
@@ -2362,6 +2369,7 @@ function workEntryPreview(
 ) {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsSkill(workEntry)) return workEntry.skillName ?? null;
+  if (workEntryIsOpenCodeTask(workEntry)) return workEntry.taskDescription ?? null;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntry.todoItems !== undefined) {
@@ -2526,6 +2534,7 @@ function workEntryDisplayText(
     workEntryIsEdit(workEntry) ||
     workEntryIsGlob(workEntry) ||
     workEntryIsSkill(workEntry) ||
+    workEntryIsOpenCodeTask(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
   return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
@@ -2777,8 +2786,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         <EditToolDiff renderablePatch={editRenderablePatch} />
       ) : expanded && canExpand && expandedBody ? (
         <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
-          {workEntry.skillDetailIsMarkdown ? (
-            <SkillToolMarkdown text={expandedBody} />
+          {workEntry.skillDetailIsMarkdown || workEntry.taskDetailIsMarkdown ? (
+            <ToolDetailMarkdown text={expandedBody} />
           ) : (
             <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
           )}
@@ -2788,7 +2797,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   );
 });
 
-const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+const ToolDetailMarkdown = memo(function ToolDetailMarkdown(props: { text: string }) {
   const ctx = use(TimelineRowCtx);
   return (
     <div className="max-h-64 overflow-auto pe-2 text-sm">

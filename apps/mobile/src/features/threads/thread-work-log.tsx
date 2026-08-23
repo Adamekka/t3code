@@ -513,7 +513,7 @@ export function ThreadWorkLog(props: {
                 >
                   <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
                 </Animated.View>
-              ) : fullDetail && row.skillDetailIsMarkdown ? (
+              ) : fullDetail && (row.skillDetailIsMarkdown || row.taskDetailIsMarkdown) ? (
                 <Animated.View
                   entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
                   exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
