@@ -406,6 +406,11 @@ export function projectActivityPayload(
   const isOpenCodeEditActivity = toolName?.toLowerCase() === "edit";
   const isOpenCodeWriteActivity = toolName?.toLowerCase() === "write";
   const isOpenCodeGrepActivity = toolName?.toLowerCase() === "grep";
+  // Historical projected rows may retain only the generic activity summary and detail.
+  const isOpenCodeSkillActivity =
+    toolName?.toLowerCase() === "skill" ||
+    data.kind === "skill" ||
+    activity.summary.trim().toLowerCase() === "skill";
   const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
   const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
   const readOutput =
@@ -440,6 +445,49 @@ export function projectActivityPayload(
     typeof input?.content === "string"
       ? input.content
       : null;
+  const skillMetadata = isOpenCodeSkillActivity ? asRecord(state?.metadata) : null;
+  const projectedSkillName = isOpenCodeSkillActivity
+    ? (asTrimmedString(data.name) ??
+      asTrimmedString(input?.name) ??
+      asTrimmedString(skillMetadata?.name))
+    : null;
+  let skillName = projectedSkillName;
+  let skillMarkdown: string | undefined =
+    isOpenCodeSkillActivity &&
+    statusProjectedPayload.status === "completed" &&
+    data.detailFormat === "markdown"
+      ? typeof payload.detail === "string"
+        ? payload.detail
+        : ""
+      : undefined;
+  if (
+    skillMarkdown === undefined &&
+    isOpenCodeSkillActivity &&
+    statusProjectedPayload.status === "completed"
+  ) {
+    const output =
+      typeof state?.output === "string"
+        ? state.output.trim()
+        : typeof payload.detail === "string"
+          ? payload.detail.trim()
+          : "";
+    const openingTag = /^<skill_content name="([^"\r\n]+)">\r?\n/u.exec(output);
+    const closingTag = "</skill_content>";
+    if (openingTag && output.endsWith(closingTag)) {
+      const envelopeName = openingTag[1]!;
+      const inner = output
+        .slice(openingTag[0].length, -closingTag.length)
+        .replace(/\r\n/gu, "\n")
+        .trimEnd();
+      const generatedHeading = `# Skill: ${envelopeName}`;
+      const footerStart = inner.lastIndexOf("\nBase directory for this skill:");
+      if (inner.startsWith(`${generatedHeading}\n`) && footerStart > generatedHeading.length) {
+        const markdown = inner.slice(generatedHeading.length, footerStart).trim();
+        skillName = skillName ?? envelopeName;
+        skillMarkdown = markdown;
+      }
+    }
+  }
   const grepOutput =
     isOpenCodeGrepActivity && typeof state?.output === "string"
       ? parseOpenCodeGrepOutput(state.output)
@@ -524,6 +572,8 @@ export function projectActivityPayload(
   } else if (isTodoActivity) {
     projectedData.kind = "todo";
     projectedData.todos = todos;
+  } else if (isOpenCodeSkillActivity) {
+    projectedData.kind = "skill";
   } else if (isSearchActivity) {
     projectedData.kind = "search";
   } else if ("kind" in data) {
@@ -537,6 +587,12 @@ export function projectActivityPayload(
   }
   if (editInputPath && editPatch) {
     projectedData.edit = { path: editInputPath, patch: editPatch };
+  }
+  if (skillName) {
+    projectedData.name = skillName;
+  }
+  if (skillMarkdown !== undefined) {
+    projectedData.detailFormat = "markdown";
   }
   if (isSearchActivity) {
     const searchInput = rawInput ?? input;
@@ -642,6 +698,13 @@ export function projectActivityPayload(
     changedFiles.length > 0
   ) {
     delete normalizedPayload.detail;
+  }
+  if (skillMarkdown !== undefined) {
+    if (skillMarkdown.length > 0) {
+      normalizedPayload.detail = skillMarkdown;
+    } else {
+      delete normalizedPayload.detail;
+    }
   }
 
   return {
