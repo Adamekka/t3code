@@ -1180,6 +1180,7 @@ function renderFeedEntry(
       copiedRowId={props.copiedRowId}
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
+      markdownStyle={markdownStyles.assistant}
       workspaceRoot={props.workspaceRoot}
       onCopyRow={props.onCopyWorkRow}
       onToggleRow={props.onToggleWorkRow}
