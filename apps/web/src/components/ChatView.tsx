@@ -7332,7 +7332,10 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
+                    <ComposerSurface.Shell
+                      contextStrip={showComposerContextStrip}
+                      className="max-w-none"
+                    >
                       <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer

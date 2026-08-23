@@ -95,9 +95,7 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
-  resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapHeightStyle,
-  resolveTimelineMinimapHitStripWidth,
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapTopPercent,
@@ -106,6 +104,7 @@ import {
   workEntryIsVisibleInGroup,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
+  TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
 } from "./MessagesTimeline.logic";
@@ -198,7 +197,7 @@ function TimelineLoadEarlierHeader({
 }) {
   return (
     <div className={fade ? "pt-[var(--workspace-titlebar-scroll-fade-height)]" : "pt-3 sm:pt-4"}>
-      <div className="mx-auto w-full max-w-3xl pb-2">
+      <div className="w-full pb-2">
         <button
           type="button"
           onClick={onLoadEarlier}
@@ -494,11 +493,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const rows = useStableRows(rawRows);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
-  const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
-  const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const hasTimelineMinimap = minimapItems.length >= TIMELINE_MINIMAP_MIN_ITEMS;
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -548,31 +543,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const frame = requestAnimationFrame(handleScroll);
     return () => cancelAnimationFrame(frame);
   }, [handleScroll, rows.length]);
-
-  useEffect(() => {
-    if (!timelineViewportElement) {
-      return;
-    }
-
-    const measure = () => {
-      const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
-      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(viewportWidth);
-      setMinimapHasPersistentGutter((current) =>
-        current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
-      );
-      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth));
-    };
-
-    const frame = requestAnimationFrame(measure);
-
-    const observer = new ResizeObserver(measure);
-    observer.observe(timelineViewportElement);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [timelineViewportElement, rows.length]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -630,7 +600,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
-      <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
+      <div className="w-full min-w-0 overflow-x-clip" data-timeline-root="true">
         <TimelineRowContent row={item} />
       </div>
     ),
@@ -651,7 +621,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   return (
     <TimelineRowCtx value={sharedState}>
       <TimelineRowActivityCtx value={activityState}>
-        <div ref={setTimelineViewportElement} className="relative h-full min-h-0">
+        <div className="relative h-full min-h-0">
           <LegendList<MessagesTimelineRow>
             ref={listRef}
             data={rows}
@@ -671,6 +641,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             onScroll={handleScroll}
             className={cn(
               "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",
+              // This must override sm:px-5 so the rail has room without shifting content off-center.
+              hasTimelineMinimap && "[@media(pointer:fine)]:px-16!",
               topFadeEnabled && "topbar-scroll-fade",
             )}
             ListHeaderComponent={
@@ -690,8 +662,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           />
           <TimelineMinimap
             items={minimapItems}
-            hasPersistentGutter={minimapHasPersistentGutter}
-            hitStripWidth={minimapHitStripWidth}
             stripMap={minimapStripMap}
             onSelect={(item) => {
               onManualNavigation();
@@ -791,14 +761,10 @@ function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
 }
 
 function TimelineMinimap({
-  hasPersistentGutter,
-  hitStripWidth,
   items,
   stripMap,
   onSelect,
 }: {
-  hasPersistentGutter: boolean;
-  hitStripWidth: number;
   items: ReadonlyArray<TimelineMinimapItem>;
   stripMap: Map<string, HTMLSpanElement>;
   onSelect: (item: TimelineMinimapItem) => void;
@@ -858,24 +824,13 @@ function TimelineMinimap({
 
   return (
     <div
-      className={cn(
-        "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
-        hasPersistentGutter
-          ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
-      )}
+      className="group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block"
       data-testid="timeline-minimap"
-      data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
     >
       <div className="relative h-full w-full select-none">
         <button
           aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
-          className={cn(
-            "absolute top-1/2 left-3 -translate-y-1/2 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
-            // The strip is width-capped to the side gutter so it never overlays
-            // the centered content column; with no usable gutter it goes inert.
-            hitStripWidth > 0 ? "pointer-events-auto" : "pointer-events-none",
-          )}
+          className="group/rail pointer-events-auto absolute top-1/2 left-3 -translate-y-1/2 cursor-pointer bg-transparent focus-visible:outline-none"
           onBlur={() => setActiveIndex(null)}
           onClick={(event) => {
             if (timelineMinimapEventTargetsPreview(event.target)) {
@@ -919,10 +874,17 @@ function TimelineMinimap({
           }}
           style={{
             height: resolveTimelineMinimapHeightStyle(items.length),
-            width: resolveTimelineMinimapInteractiveWidth(hitStripWidth, activeItem !== null),
+            width: resolveTimelineMinimapInteractiveWidth(
+              TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH,
+              activeItem !== null,
+            ),
           }}
           type="button"
         >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-y-2 -left-1 w-10 rounded-full transition-colors group-hover/rail:bg-muted/35 group-focus-visible/rail:bg-muted/35 group-focus-visible/rail:ring-2 group-focus-visible/rail:ring-ring/70"
+          />
           <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
           {items.map((item, index) => {
             const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
