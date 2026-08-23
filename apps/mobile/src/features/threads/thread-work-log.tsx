@@ -320,7 +320,7 @@ export function ThreadWorkLog(props: {
             <Animated.View
               key={row.id}
               layout={WORK_LOG_LAYOUT_TRANSITION}
-              className="overflow-hidden"
+              className={cn("overflow-hidden", row.toolLike && "relative rounded-md bg-subtle")}
               {...(isFreshRow(row.createdAt) ? { entering: FadeIn.duration(200) } : {})}
             >
               <Pressable
@@ -340,7 +340,10 @@ export function ThreadWorkLog(props: {
                   }
                 }}
                 onLongPress={() => props.onCopyRow(row.id, row.getCopyText())}
-                className="rounded-md px-0.5 py-0 active:bg-subtle"
+                className={cn(
+                  "rounded-md px-0.5 py-0",
+                  row.toolLike ? "active:bg-subtle-strong" : "active:bg-subtle",
+                )}
               >
                 <View className="min-h-8 flex-row items-center gap-1.5">
                   {row.live ? (
@@ -425,6 +428,12 @@ export function ThreadWorkLog(props: {
                     </Text>
                   </ScrollView>
                 </Animated.View>
+              ) : null}
+              {row.toolLike ? (
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-0 rounded-md border border-border-subtle border-l-2 border-l-icon-subtle"
+                />
               ) : null}
             </Animated.View>
           );
