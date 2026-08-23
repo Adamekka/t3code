@@ -2,13 +2,15 @@ import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
 import { MaskedView } from "@expo/ui/community/masked-view";
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useId, useState, type ComponentProps } from "react";
+import { memo, useEffect, useId, useMemo, useState, type ComponentProps } from "react";
 import {
   AccessibilityInfo,
   AppState,
   type ColorValue,
   Pressable,
   ScrollView,
+  StyleSheet,
+  Text as NativeText,
   View,
 } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -32,6 +34,16 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
+import { resolveNativeReviewDiffView } from "../diffs/nativeReviewDiffSurface";
+import {
+  buildNativeReviewDiffData,
+  createNativeReviewDiffTheme,
+  NATIVE_REVIEW_DIFF_CONTENT_WIDTH,
+} from "../review/nativeReviewDiffAdapter";
+import { buildReviewParsedDiff } from "../review/reviewModel";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 
 const SHIMMER_WIDTH = 72;
 const SHIMMER_SWEEP_MS = 1_350;
@@ -262,6 +274,78 @@ const WORK_LOG_BOTTOM_MARGIN = 4; // mb-1
 
 export const WORK_GROUP_TOGGLE_HEIGHT = 36; // min-h-8 (32) + mb-1 (4)
 
+const EditToolDiff = memo(function EditToolDiff(props: {
+  readonly activityId: string;
+  readonly patch: string;
+}) {
+  const { codeSurface, nativeReviewDiffStyle } = useAppearanceCodeSurface();
+  const { themeAppearance: appearanceScheme, themeId } = useAppearancePreferences();
+  const appTheme = useUniwindTheme();
+  const NativeReviewDiffView = resolveNativeReviewDiffView();
+  const parsedDiff = useMemo(
+    () => buildReviewParsedDiff(props.patch, `tool-edit:${props.activityId}`),
+    [props.activityId, props.patch],
+  );
+  const nativeReviewDiffData = useMemo(() => buildNativeReviewDiffData(parsedDiff), [parsedDiff]);
+  const rows = useMemo(
+    () => nativeReviewDiffData.rows.filter((row) => row.kind !== "file"),
+    [nativeReviewDiffData.rows],
+  );
+  const theme = useMemo(
+    () => createNativeReviewDiffTheme(appearanceScheme, themeId, appTheme),
+    [appearanceScheme, appTheme, themeId],
+  );
+  const rowsJson = useMemo(() => JSON.stringify(rows), [rows]);
+  const themeJson = useMemo(() => JSON.stringify(theme), [theme]);
+  const styleJson = useMemo(() => JSON.stringify(nativeReviewDiffStyle), [nativeReviewDiffStyle]);
+  const height = Math.min(360, Math.max(112, rows.length * nativeReviewDiffStyle.rowHeight));
+
+  if (NativeReviewDiffView && rows.length > 0) {
+    return (
+      <View
+        className="ml-7 overflow-hidden rounded-md border border-border-subtle"
+        collapsable={false}
+        style={{ backgroundColor: theme.background, height }}
+      >
+        <NativeReviewDiffView
+          collapsable={false}
+          style={StyleSheet.absoluteFill}
+          appearanceScheme={appearanceScheme}
+          contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
+          rowHeight={nativeReviewDiffStyle.rowHeight}
+          rowsJson={rowsJson}
+          styleJson={styleJson}
+          themeJson={themeJson}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+      className="ml-7 max-h-60 border-l border-neutral-300/60 pl-3 dark:border-white/[0.12]"
+    >
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 8 }}
+      >
+        <NativeText
+          selectable
+          className="font-mono text-foreground-muted"
+          style={{ fontSize: codeSurface.fontSize, lineHeight: codeSurface.rowHeight }}
+        >
+          {props.patch}
+        </NativeText>
+      </ScrollView>
+    </ScrollView>
+  );
+});
+
 export function collapsedWorkLogHeight(activities: ReadonlyArray<ThreadFeedActivity>): number {
   const rows = activities;
   if (rows.length === 0) {
@@ -281,7 +365,11 @@ export function ThreadWorkLog(props: {
 }) {
   const rows = props.activities.map((activity) => ({
     ...activity,
-    detail: compactActivityDetail(activity.detail),
+    detail: activity.editDiff
+      ? (resolveWorkspaceRelativeFilePath(props.workspaceRoot, activity.editDiff.path) ??
+        compactActivityDetail(activity.detail) ??
+        activity.editDiff.path)
+      : compactActivityDetail(activity.detail),
   }));
 
   if (rows.length === 0) {
@@ -406,7 +494,15 @@ export function ThreadWorkLog(props: {
                 </View>
               </Pressable>
 
-              {fullDetail ? (
+              {expanded && row.editDiff ? (
+                <Animated.View
+                  entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
+                  exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
+                  layout={WORK_LOG_LAYOUT_TRANSITION}
+                >
+                  <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
+                </Animated.View>
+              ) : fullDetail ? (
                 <Animated.View
                   entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
                   exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}

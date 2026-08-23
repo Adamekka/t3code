@@ -75,6 +75,11 @@ export interface WorkLogSearchMatch {
   lineContent: string;
 }
 
+export interface WorkLogEditDiff {
+  path: string;
+  patch: string;
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -91,6 +96,7 @@ export interface WorkLogEntry {
   searchMatchCount?: number;
   todoItems?: ReadonlyArray<WorkLogTodoItem>;
   changedFiles?: ReadonlyArray<string>;
+  editDiff?: WorkLogEditDiff;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
@@ -1040,6 +1046,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
   const data = asRecord(payload?.data);
+  const rawEditDiff = asRecord(data?.edit);
+  const editDiffPath = asTrimmedString(rawEditDiff?.path);
+  const editDiffPatch =
+    typeof rawEditDiff?.patch === "string" && rawEditDiff.patch.trim().length > 0
+      ? rawEditDiff.patch
+      : null;
   const globPattern = asTrimmedString(data?.pattern);
   const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
   const searchQuery =
@@ -1139,6 +1151,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (editDiffPath && editDiffPatch) {
+    entry.editDiff = { path: editDiffPath, patch: editDiffPatch };
   }
   if (title) {
     entry.toolTitle = title;
