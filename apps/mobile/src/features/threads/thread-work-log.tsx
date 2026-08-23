@@ -1,6 +1,14 @@
 import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
-import { LayoutAnimation, Pressable, ScrollView, View } from "react-native";
+import { memo, useMemo } from "react";
+import {
+  LayoutAnimation,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text as NativeText,
+  View,
+} from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { scaledTypographyLineHeight } from "../../lib/appearancePreferences";
@@ -9,6 +17,15 @@ import type { ThreadFeedActivity } from "../../lib/threadActivity";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import Animated, { FadeIn } from "react-native-reanimated";
+import { resolveNativeReviewDiffView } from "../diffs/nativeReviewDiffSurface";
+import {
+  buildNativeReviewDiffData,
+  createNativeReviewDiffTheme,
+  NATIVE_REVIEW_DIFF_CONTENT_WIDTH,
+} from "../review/nativeReviewDiffAdapter";
+import { buildReviewParsedDiff } from "../review/reviewModel";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCodeSurface";
 
 const WORK_LOG_LAYOUT_ANIMATION = {
   duration: 180,
@@ -101,6 +118,77 @@ const WORK_LOG_BOTTOM_MARGIN = 4; // mb-1
 
 export const WORK_GROUP_TOGGLE_HEIGHT = 36; // min-h-8 (32) + mb-1 (4)
 
+const EditToolDiff = memo(function EditToolDiff(props: {
+  readonly activityId: string;
+  readonly patch: string;
+}) {
+  const { codeSurface, nativeReviewDiffStyle } = useAppearanceCodeSurface();
+  const { themeAppearance: appearanceScheme, themeId } = useAppearancePreferences();
+  const NativeReviewDiffView = resolveNativeReviewDiffView();
+  const parsedDiff = useMemo(
+    () => buildReviewParsedDiff(props.patch, `tool-edit:${props.activityId}`),
+    [props.activityId, props.patch],
+  );
+  const nativeReviewDiffData = useMemo(() => buildNativeReviewDiffData(parsedDiff), [parsedDiff]);
+  const rows = useMemo(
+    () => nativeReviewDiffData.rows.filter((row) => row.kind !== "file"),
+    [nativeReviewDiffData.rows],
+  );
+  const theme = useMemo(
+    () => createNativeReviewDiffTheme(appearanceScheme, themeId),
+    [appearanceScheme, themeId],
+  );
+  const rowsJson = useMemo(() => JSON.stringify(rows), [rows]);
+  const themeJson = useMemo(() => JSON.stringify(theme), [theme]);
+  const styleJson = useMemo(() => JSON.stringify(nativeReviewDiffStyle), [nativeReviewDiffStyle]);
+  const height = Math.min(360, Math.max(112, rows.length * nativeReviewDiffStyle.rowHeight));
+
+  if (NativeReviewDiffView && rows.length > 0) {
+    return (
+      <View
+        className="ml-7 overflow-hidden rounded-md border border-border-subtle"
+        collapsable={false}
+        style={{ backgroundColor: theme.background, height }}
+      >
+        <NativeReviewDiffView
+          collapsable={false}
+          style={StyleSheet.absoluteFill}
+          appearanceScheme={appearanceScheme}
+          contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
+          rowHeight={nativeReviewDiffStyle.rowHeight}
+          rowsJson={rowsJson}
+          styleJson={styleJson}
+          themeJson={themeJson}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+      className="ml-7 max-h-60 border-l border-neutral-300/60 pl-3 dark:border-white/[0.12]"
+    >
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 8 }}
+      >
+        <NativeText
+          selectable
+          className="font-mono text-foreground-muted"
+          style={{ fontSize: codeSurface.fontSize, lineHeight: codeSurface.rowHeight }}
+        >
+          {props.patch}
+        </NativeText>
+      </ScrollView>
+    </ScrollView>
+  );
+});
+
 export function collapsedWorkLogHeight(
   activities: ReadonlyArray<ThreadFeedActivity>,
   baseFontSize: number,
@@ -131,7 +219,11 @@ export function ThreadWorkLog(props: {
 }) {
   const rows = visibleWorkLogActivities(props.activities).map((activity) => ({
     ...activity,
-    detail: compactActivityDetail(activity.detail),
+    detail: activity.editDiff
+      ? (resolveWorkspaceRelativeFilePath(props.workspaceRoot, activity.editDiff.path) ??
+        compactActivityDetail(activity.detail) ??
+        activity.editDiff.path)
+      : compactActivityDetail(activity.detail),
   }));
 
   if (rows.length === 0) {
@@ -265,7 +357,9 @@ export function ThreadWorkLog(props: {
                 </View>
               </Pressable>
 
-              {fullDetail ? (
+              {expanded && row.editDiff ? (
+                <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
+              ) : fullDetail ? (
                 <View className="ml-7 border-l border-adaptive-neutral-300-a60-white-a12 pb-1 pl-3 pt-0.5">
                   <ScrollView
                     nestedScrollEnabled
