@@ -670,6 +670,80 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toBe(patch);
   });
 
+  it("shows Skill names while retaining normalized Markdown detail", () => {
+    const markdown = "# Unslop\n\nEdit text to remove AI patterns.";
+    const thread = makeThread({
+      id: ThreadId.make("thread-skill"),
+      projectId: ProjectId.make("project-1"),
+      title: "Load skill",
+      activities: [
+        makeActivity({
+          id: EventId.make("skill-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "skill",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "completed",
+            detail: markdown,
+            data: { kind: "skill", name: "unslop", detailFormat: "markdown" },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Skill - unslop",
+      detail: null,
+      skillDetailIsMarkdown: true,
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe(markdown);
+  });
+
+  it("keeps failed Skill detail as plain text", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-failed-skill"),
+      projectId: ProjectId.make("project-1"),
+      title: "Load missing skill",
+      activities: [
+        makeActivity({
+          id: EventId.make("skill-failed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "skill",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "failed",
+            detail: "Skill not found: missing-skill",
+            data: { kind: "skill", name: "missing-skill" },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Skill - missing-skill",
+      detail: null,
+      status: "failure",
+    });
+    expect(group.activities[0]?.skillDetailIsMarkdown).toBeUndefined();
+    expect(group.activities[0]?.getFullDetail()).toBe("Skill not found: missing-skill");
+  });
+
   it("shows Glob patterns while expanding matched paths", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-glob"),

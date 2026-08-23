@@ -88,6 +88,7 @@ export interface ThreadFeedActivity {
     readonly path: string;
     readonly patch: string;
   };
+  readonly skillDetailIsMarkdown?: boolean;
 }
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
@@ -122,6 +123,8 @@ export interface WorkLogEntry {
     path: string;
     patch: string;
   };
+  skillName?: string;
+  skillDetailIsMarkdown?: boolean;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -421,6 +424,8 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       ? rawEditDiff.patch
       : null;
   const globPattern = asTrimmedString(data?.pattern);
+  const skillName = data?.kind === "skill" ? asTrimmedString(data.name) : null;
+  const skillDetailIsMarkdown = data?.kind === "skill" && data.detailFormat === "markdown";
   const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
   const searchQuery =
     asTrimmedString(rawInput?.query) ??
@@ -530,6 +535,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (editDiffPath && editDiffPatch) {
     entry.editDiff = { path: editDiffPath, patch: editDiffPatch };
+  }
+  if (skillName) {
+    entry.skillName = skillName;
+  }
+  if (skillDetailIsMarkdown) {
+    entry.skillDetailIsMarkdown = true;
   }
   if (title) {
     entry.toolTitle = title;
@@ -1898,8 +1909,9 @@ export function buildThreadFeed(
           );
         })
         .map<RawThreadFeedEntry>((entry) => {
-          const summary = workEntryHeading(entry);
-          const detail = workEntryPreview(entry);
+          const heading = workEntryHeading(entry);
+          const summary = entry.skillName ? `${heading} - ${entry.skillName}` : heading;
+          const detail = entry.skillName ? null : workEntryPreview(entry);
           const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
           const getCopyText = memoizeValue(() =>
             [summary, detail, getFullDetail()]
@@ -1932,6 +1944,7 @@ export function buildThreadFeed(
                 ? { searchMatchCount: entry.searchMatchCount }
                 : {}),
               ...(entry.editDiff ? { editDiff: entry.editDiff } : {}),
+              ...(entry.skillDetailIsMarkdown ? { skillDetailIsMarkdown: true } : {}),
             },
           };
         }),
