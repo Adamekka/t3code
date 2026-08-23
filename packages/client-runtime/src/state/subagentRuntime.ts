@@ -253,6 +253,8 @@ interface MutableAgent {
   startedAt: string | null;
   completedAt: string | null;
   updatedAt: string;
+  toolUseId: string | null;
+  terminalToolUseIds: Set<string>;
 }
 
 function kindFromPayload(
@@ -307,6 +309,8 @@ function getOrCreate(
     startedAt: null,
     completedAt: null,
     updatedAt: at,
+    toolUseId: asString(payload.toolUseId) ?? null,
+    terminalToolUseIds: new Set(),
   };
   agents.set(id, created);
   return created;
@@ -322,6 +326,8 @@ function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): vo
   if (model) agent.model = model;
   const effort = asString(payload.effort);
   if (effort) agent.effort = effort;
+  const toolUseId = asString(payload.toolUseId);
+  if (toolUseId) agent.toolUseId = toolUseId;
   const parentAgentId = asString(payload.parentAgentId);
   if (parentAgentId) {
     agent.parentAgentId = parentAgentId;
@@ -507,9 +513,18 @@ export function foldSubagentActivities(
         const existed = agents.has(taskId);
         if (!existed && isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
+        const incomingToolUseId = asString(payload.toolUseId);
+        const explicitStatus = asRuntimeStatus(payload.status);
+        if (
+          incomingToolUseId &&
+          agent.terminalToolUseIds.has(incomingToolUseId) &&
+          (incomingToolUseId !== agent.toolUseId ||
+            (explicitStatus !== undefined && !isTerminalSubagentStatus(explicitStatus)))
+        ) {
+          break;
+        }
         fillMetadata(agent, payload);
         if (agent.activationCount === 0) agent.activationCount = 1;
-        const explicitStatus = asRuntimeStatus(payload.status);
         if (explicitStatus) {
           applyStatus(agent, explicitStatus, at);
         } else if (
@@ -518,6 +533,9 @@ export function foldSubagentActivities(
           agent.status !== "idle"
         ) {
           applyStatus(agent, "running", at);
+        }
+        if (explicitStatus && isTerminalSubagentStatus(explicitStatus) && incomingToolUseId) {
+          agent.terminalToolUseIds.add(incomingToolUseId);
         }
         const summary = asString(payload.summary);
         if (summary) {
@@ -545,14 +563,26 @@ export function foldSubagentActivities(
         // first row's classification instead of being re-judged.
         if (!agents.has(taskId) && isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
+        const incomingToolUseId = asString(payload.toolUseId);
+        const status = asRuntimeStatus(payload.status);
+        if (
+          incomingToolUseId &&
+          agent.terminalToolUseIds.has(incomingToolUseId) &&
+          (incomingToolUseId !== agent.toolUseId ||
+            (status !== undefined && !isTerminalSubagentStatus(status)))
+        ) {
+          break;
+        }
         fillMetadata(agent, payload);
         // A task first seen via task.updated (start row aged out) has run at
         // least once — zero activations would misreport "run 0" and let a
         // later start row treat it as never-started (review finding).
         if (agent.activationCount === 0) agent.activationCount = 1;
         const wasTerminal = isTerminalSubagentStatus(agent.status);
-        const status = asRuntimeStatus(payload.status);
         if (status) applyStatus(agent, status, at);
+        if (status && isTerminalSubagentStatus(status) && incomingToolUseId) {
+          agent.terminalToolUseIds.add(incomingToolUseId);
+        }
         const error = asString(payload.error);
         if (error) agent.error = bounded(error);
         // Provider end time beats ingestion time for the transition that
@@ -573,7 +603,12 @@ export function foldSubagentActivities(
         // first row's classification instead of being re-judged.
         if (!agents.has(taskId) && isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
+        const toolUseId = asString(payload.toolUseId);
+        if (toolUseId && agent.terminalToolUseIds.has(toolUseId) && toolUseId !== agent.toolUseId) {
+          break;
+        }
         fillMetadata(agent, payload);
+        if (toolUseId) agent.terminalToolUseIds.add(toolUseId);
         if (agent.activationCount === 0) agent.activationCount = 1;
         // Already-terminal: status and timestamps are frozen (first write
         // wins, duplicates must not slide them) but the completion still
@@ -671,7 +706,9 @@ export function foldSubagentActivities(
       .slice(0, ROSTER_LIMIT);
   }
 
-  return roster.map((agent) => ({ ...agent }));
+  return roster.map(
+    ({ toolUseId: _toolUseId, terminalToolUseIds: _terminalToolUseIds, ...agent }) => agent,
+  );
 }
 
 export interface AgentPanelWorkflowGroup {
