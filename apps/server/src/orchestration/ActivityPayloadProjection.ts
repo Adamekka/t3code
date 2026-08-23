@@ -8,6 +8,7 @@ import {
   OPEN_CODE_GREP_MATCH_LIMIT,
   parseOpenCodeGrepOutput,
   parseOpenCodeReadOutput,
+  parseOpenCodeTaskEnvelope,
 } from "../provider/OpenCodeToolOutput.ts";
 
 const MAX_PROJECTED_GREP_PATH_LENGTH = 512;
@@ -419,6 +420,10 @@ export function projectActivityPayload(
     toolName?.toLowerCase() === "skill" ||
     data.kind === "skill" ||
     activity.summary.trim().toLowerCase() === "skill";
+  const isOpenCodeTaskActivity =
+    toolName?.toLowerCase() === "task" ||
+    data.kind === "task" ||
+    activity.summary.trim().toLowerCase() === "task";
   const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
   const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
   const readOutput =
@@ -499,6 +504,18 @@ export function projectActivityPayload(
       }
     }
   }
+  const taskDescription = isOpenCodeTaskActivity
+    ? (asTrimmedString(data.description) ?? asTrimmedString(input?.description))
+    : null;
+  const taskEnvelope = isOpenCodeTaskActivity
+    ? parseOpenCodeTaskEnvelope(typeof state?.output === "string" ? state.output : payload.detail)
+    : null;
+  const taskMarkdown =
+    isOpenCodeTaskActivity &&
+    statusProjectedPayload.status === "completed" &&
+    (data.detailFormat === "markdown" || taskEnvelope?.state === "completed")
+      ? (taskEnvelope?.result ?? (typeof payload.detail === "string" ? payload.detail : ""))
+      : undefined;
   const grepOutput =
     isOpenCodeGrepActivity && typeof state?.output === "string"
       ? parseOpenCodeGrepOutput(state.output)
@@ -585,6 +602,8 @@ export function projectActivityPayload(
     projectedData.todos = todos;
   } else if (isOpenCodeSkillActivity) {
     projectedData.kind = "skill";
+  } else if (isOpenCodeTaskActivity) {
+    projectedData.kind = "task";
   } else if (isSearchActivity) {
     projectedData.kind = "search";
   } else if ("kind" in data) {
@@ -603,6 +622,12 @@ export function projectActivityPayload(
     projectedData.name = skillName;
   }
   if (skillMarkdown !== undefined) {
+    projectedData.detailFormat = "markdown";
+  }
+  if (taskDescription) {
+    projectedData.description = taskDescription;
+  }
+  if (taskMarkdown !== undefined) {
     projectedData.detailFormat = "markdown";
   }
   if (isSearchActivity) {
@@ -667,7 +692,10 @@ export function projectActivityPayload(
     projectedData.rawOutput = rawOutput;
   }
 
-  const normalizedPayload = { ...statusProjectedPayload };
+  const normalizedPayload: Record<string, unknown> = {
+    ...statusProjectedPayload,
+    ...(taskEnvelope?.state === "error" ? { status: "failed" } : {}),
+  };
   if (readOutput) {
     if (readOutput.content.trim().length > 0) {
       normalizedPayload.detail = readOutput.content;
@@ -713,6 +741,20 @@ export function projectActivityPayload(
   if (skillMarkdown !== undefined) {
     if (skillMarkdown.length > 0) {
       normalizedPayload.detail = skillMarkdown;
+    } else {
+      delete normalizedPayload.detail;
+    }
+  }
+  if (taskMarkdown !== undefined) {
+    if (taskMarkdown.length > 0) {
+      normalizedPayload.detail = taskMarkdown;
+    } else {
+      delete normalizedPayload.detail;
+    }
+  } else if (taskEnvelope) {
+    const taskDetail = taskEnvelope.error ?? taskEnvelope.result;
+    if (taskDetail) {
+      normalizedPayload.detail = taskDetail;
     } else {
       delete normalizedPayload.detail;
     }

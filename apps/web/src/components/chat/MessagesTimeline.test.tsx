@@ -1152,6 +1152,62 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Edit text to remove AI patterns.");
   });
 
+  it("shows Task descriptions while keeping Markdown out of the compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-task",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-task",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "task",
+              tone: "tool",
+              itemType: "collab_agent_tool_call",
+              detail: "## Result\n\nFound it.",
+              taskDescription: "Trace task flow",
+              taskDetailIsMarkdown: true,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Task - Trace task flow"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Found it.");
+  });
+
+  it("keeps Task Markdown out of the compact row when its description is missing", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-task-without-description",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-task-without-description",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "task",
+              tone: "tool",
+              itemType: "collab_agent_tool_call",
+              detail: "## Result\n\nFound it.",
+              taskDetailIsMarkdown: true,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Task"');
+    expect(markup).not.toContain("Found it.");
+  });
+
   it("shows Glob patterns without matched paths in the compact row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
