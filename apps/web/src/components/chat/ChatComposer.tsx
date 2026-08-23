@@ -718,10 +718,8 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePosition);
     if (observer) {
-      // The composer is centered and capped at a max width, so opening a side
-      // panel slides it sideways without ever resizing it. Watching the anchor
-      // alone would leave the menu behind; the ancestors are what shrink, and
-      // they resize on every frame of the panel animation.
+      // Ancestor layout changes can move the composer during panel animations,
+      // so observe the full chain to keep the menu anchored.
       observer.observe(anchor);
       for (let element = anchor.parentElement; element; element = element.parentElement) {
         observer.observe(element);
@@ -4593,7 +4591,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (isInsideRestingComposerControlScope(event.target)) return;
         composerMentionDragHandlers.onDrop(event);
       }}
-      className="mx-auto w-full min-w-0 max-w-3xl"
+      className="w-full min-w-0"
       data-chat-composer-form="true"
     >
       {composerControlsInStrip && restingControlsHost
