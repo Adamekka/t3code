@@ -92,7 +92,13 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
 
 export function workEntryViewedImagePath(entry: WorkLogPresentationEntry): string | null {
   const detail = entry.detail?.trim();
-  return toolGroupAction(entry) === "read" &&
+  // Summary labels may infer reads from display text, but image previews require provider metadata.
+  const supportsImagePreview =
+    entry.requestKind === "file-read" ||
+    entry.itemType === "image_view" ||
+    (entry.itemType === "dynamic_tool_call" &&
+      entry.toolTitle?.trim().toLowerCase() === "read file");
+  return supportsImagePreview &&
     detail !== undefined &&
     !/[\r\n]/.test(detail) &&
     isWorkspaceImagePreviewPath(detail)

@@ -1449,6 +1449,11 @@ export function deriveThreadFeedPresentation(
   expandedTurnIds: ReadonlySet<TurnId>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
+  options: {
+    readonly collapsedTurnIds?: ReadonlySet<TurnId>;
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly expandToolCallsByDefault?: boolean;
+  } = {},
 ): ThreadFeedEntry[] {
   const sourceFeed = feed.filter(
     (entry) => entry.type !== "turn-fold" && entry.type !== "work-toggle",
@@ -1456,12 +1461,15 @@ export function deriveThreadFeedPresentation(
   const activeTailGroup = sourceFeed.findLast(
     (entry) => entry.type !== "message" || !isEmptyMessage(entry),
   );
+  const turnIsExpanded = (turnId: TurnId) =>
+    expandedTurnIds.has(turnId) ||
+    (options.expandToolCallsByDefault === true && !options.collapsedTurnIds?.has(turnId));
   const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn);
   const unsettledTurnId = deriveUnsettledTurnId(latestTurn);
   const isWorking = activeWorkStartedAt !== null;
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
-    if (!expandedTurnIds.has(fold.turnId)) {
+    if (!turnIsExpanded(fold.turnId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -1485,7 +1493,7 @@ export function deriveThreadFeedPresentation(
         createdAt: fold.createdAt,
         turnId: fold.turnId,
         label: fold.label,
-        expanded: expandedTurnIds.has(fold.turnId),
+        expanded: turnIsExpanded(fold.turnId),
       });
     }
     if (!collapsedEntryIds.has(entry.id)) {
@@ -1496,6 +1504,7 @@ export function deriveThreadFeedPresentation(
         unsettledTurnId,
         isWorking,
         isActiveTailGroup,
+        options,
       );
     }
   }
@@ -1509,6 +1518,10 @@ function appendPresentedFeedEntry(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  options: {
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly expandToolCallsByDefault?: boolean;
+  },
 ): void {
   if (entry.type !== "activity-group") {
     result.push(entry);
@@ -1539,6 +1552,7 @@ function appendPresentedFeedEntry(
       unsettledTurnId,
       isWorking,
       activeTail && isTrailingRun,
+      options,
     );
     groupableRun = [];
   };
@@ -1567,13 +1581,19 @@ function appendToolGroupRows(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  options: {
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly expandToolCallsByDefault?: boolean;
+  },
 ): void {
   const firstEntry = activities[0]!.workEntry;
   const identity = firstEntry.toolCallId
     ? `tool:${firstEntry.turnId ?? "no-turn"}:${firstEntry.toolCallId}`
     : activities[0]!.id;
   const groupId = `work-group:${identity}`;
-  const expanded = expandedWorkGroupIds.has(groupId);
+  const expanded =
+    expandedWorkGroupIds.has(groupId) ||
+    (options.expandToolCallsByDefault === true && !options.collapsedWorkGroupIds?.has(groupId));
   const latestInProgressActivity = activities.findLast(
     (activity) =>
       isWorking && activity.lifecycleStatus === "inProgress" && activity.turnId === unsettledTurnId,
