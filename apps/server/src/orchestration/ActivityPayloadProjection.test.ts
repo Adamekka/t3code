@@ -779,6 +779,117 @@ describe("projectActivityPayload", () => {
     expect(projectActivityPayload(projected)).toEqual(projected);
   });
 
+  it("projects a completed OpenCode Task as a description and authored Markdown", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "collab_agent_tool_call",
+        status: "completed",
+        detail: "provider detail is replaced by normalized content",
+        data: {
+          tool: "task",
+          state: {
+            status: "completed",
+            input: { description: "Trace task flow", subagent_type: "explore" },
+            output:
+              '<task id="child-task" state="completed">\n<task_result>\n## Result\n\nFound it.\n</task_result>\n</task>',
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "collab_agent_tool_call",
+      status: "completed",
+      detail: "## Result\n\nFound it.",
+      data: {
+        kind: "task",
+        description: "Trace task flow",
+        detailFormat: "markdown",
+      },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("strips a running OpenCode Task envelope without treating it as completed Markdown", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "collab_agent_tool_call",
+        status: "completed",
+        detail: "provider detail",
+        data: {
+          tool: "task",
+          state: {
+            status: "completed",
+            input: { description: "Research in background" },
+            output:
+              '<task id="child-task" state="running">\n<task_result>Background task launched.</task_result>\n</task>',
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "collab_agent_tool_call",
+      status: "completed",
+      detail: "Background task launched.",
+      data: { kind: "task", description: "Research in background" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("projects an OpenCode Task error envelope as plain failed detail", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "collab_agent_tool_call",
+        status: "completed",
+        data: {
+          tool: "task",
+          state: {
+            status: "completed",
+            input: { description: "Inspect failure" },
+            output:
+              '<task id="child-task" state="error">\n<task_error>Child failed.</task_error>\n</task>',
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "collab_agent_tool_call",
+      status: "failed",
+      detail: "Child failed.",
+      data: { kind: "task", description: "Inspect failure" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("preserves malformed failed OpenCode Task detail as plain text", () => {
+    const detail = '<task id="child-task" state="error">\n<task_error>Truncated';
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "collab_agent_tool_call",
+        status: "failed",
+        detail,
+        data: {
+          tool: "task",
+          state: {
+            status: "error",
+            input: { description: "Inspect failure" },
+            error: detail,
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "collab_agent_tool_call",
+      status: "failed",
+      detail,
+      data: { kind: "task", description: "Inspect failure" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
   it("projects stored OpenCode TodoWrite input without serialized JSON", () => {
     const projected = projectActivityPayload({
       ...activity({

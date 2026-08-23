@@ -2800,8 +2800,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const hasStandardExpandedContent =
     viewedImage !== null || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
+    showFailedIndicator && (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
@@ -2918,8 +2917,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 <TodoChecklist items={workEntry.todoItems} />
               ) : null}
               {expandedBody ? (
-                workEntry.skillDetailIsMarkdown ? (
-                  <SkillToolMarkdown text={expandedBody} />
+                workEntry.skillDetailIsMarkdown || workEntry.taskDetailIsMarkdown ? (
+                  <ToolDetailMarkdown text={expandedBody} />
                 ) : (
                   <pre
                     className={cn(
@@ -2939,7 +2938,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   );
 });
 
-const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+const ToolDetailMarkdown = memo(function ToolDetailMarkdown(props: { text: string }) {
   const ctx = use(TimelineRowCtx);
   return (
     <div className="max-h-64 overflow-auto pe-2 text-sm">
