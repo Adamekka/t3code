@@ -41,6 +41,7 @@ import {
   type ReactNode,
 } from "react";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
+import type { CodeViewDiffItem } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
@@ -57,6 +58,7 @@ import {
 } from "../../types";
 import {
   getRenderablePatch,
+  type RenderablePatch,
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
@@ -96,6 +98,7 @@ import {
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { TodoChecklist } from "../TodoChecklist";
+import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -2235,6 +2238,10 @@ function workEntryIsWrite(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitl
   );
 }
 
+function workEntryIsEdit(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "edit";
+}
+
 function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
@@ -2265,7 +2272,7 @@ function workEntryPreview(
     if (todos.length === 0) return "No todos";
     return `${todos.filter((todo) => todo.status === "completed").length}/${todos.length} completed`;
   }
-  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry)) {
+  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) || workEntryIsEdit(workEntry)) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
     return formatWorkspaceRelativePath(firstPath, workspaceRoot);
@@ -2352,7 +2359,9 @@ function buildToolCallExpandedBody(
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles =
-    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) ? [] : (workEntry.changedFiles ?? []);
+    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) || workEntryIsEdit(workEntry)
+      ? []
+      : (workEntry.changedFiles ?? []);
   if (changedFiles.length > 0) {
     blocks.push(
       changedFiles
@@ -2421,6 +2430,7 @@ function workEntryDisplayText(
     workEntryIsTodo(workEntry) ||
     workEntryIsRead(workEntry) ||
     workEntryIsWrite(workEntry) ||
+    workEntryIsEdit(workEntry) ||
     workEntryIsGlob(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
@@ -2548,6 +2558,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   const { threadRef, onImageExpand } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
+  const editRenderablePatch = useMemo(
+    () =>
+      workEntry.editDiff
+        ? getRenderablePatch(workEntry.editDiff.patch, `tool-edit:${workEntry.id}`, {
+            compactPartialHunkOffsets: true,
+          })
+        : null,
+    [workEntry.editDiff?.patch, workEntry.id],
+  );
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
@@ -2564,7 +2583,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
-  const canExpand = expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
+  const hasStandardExpandedContent =
+    viewedImage !== null || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
+  const canExpand = editRenderablePatch !== null || hasStandardExpandedContent;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
@@ -2662,34 +2683,91 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         {workEntryIsTodo(workEntry) ? <OpenTodosButton /> : null}
       </div>
       {expanded && canExpand ? (
-        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
-          {viewedImage && threadRef ? (
-            <div className="mb-1.5">
-              <ChatMarkdownAssetImage
-                environmentId={threadRef.environmentId}
-                resource={viewedImage.resource}
-                alt={viewedImage.alt}
-                srcFragment={viewedImage.srcFragment}
-                style={{ maxHeight: "16rem" }}
-                onImageExpand={onImageExpand}
-              />
+        <>
+          {editRenderablePatch ? <EditToolDiff renderablePatch={editRenderablePatch} /> : null}
+          {hasStandardExpandedContent ? (
+            <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
+              {viewedImage && threadRef ? (
+                <div className="mb-1.5">
+                  <ChatMarkdownAssetImage
+                    environmentId={threadRef.environmentId}
+                    resource={viewedImage.resource}
+                    alt={viewedImage.alt}
+                    srcFragment={viewedImage.srcFragment}
+                    style={{ maxHeight: "16rem" }}
+                    onImageExpand={onImageExpand}
+                  />
+                </div>
+              ) : null}
+              {workEntry.todoItems !== undefined && workEntry.todoItems.length > 0 ? (
+                <TodoChecklist items={workEntry.todoItems} />
+              ) : null}
+              {expandedBody ? (
+                <pre
+                  className={cn(
+                    workEntry.todoItems !== undefined && "mt-1",
+                    toolCallExpandedBodyClassName,
+                  )}
+                >
+                  {expandedBody}
+                </pre>
+              ) : null}
             </div>
           ) : null}
-          {workEntry.todoItems !== undefined && workEntry.todoItems.length > 0 ? (
-            <TodoChecklist items={workEntry.todoItems} />
-          ) : null}
-          {expandedBody ? (
-            <pre
-              className={cn(
-                workEntry.todoItems !== undefined && "mt-1",
-                toolCallExpandedBodyClassName,
-              )}
-            >
-              {expandedBody}
-            </pre>
-          ) : null}
-        </div>
+        </>
       ) : null}
+    </div>
+  );
+});
+
+const EditToolDiff = memo(function EditToolDiff(props: { renderablePatch: RenderablePatch }) {
+  const { resolvedTheme } = use(TimelineRowCtx);
+  // CodeView virtualizes against its own fixed-height scroll element; these values match the
+  // shared adapter's header and hunk metrics while bounding large tool diffs inside the timeline.
+  const viewportHeight =
+    props.renderablePatch.kind === "files"
+      ? Math.min(
+          384,
+          Math.max(
+            88,
+            props.renderablePatch.files.reduce(
+              (height, fileDiff) =>
+                height + 40 + fileDiff.splitLineCount * 20 + fileDiff.hunks.length * 24,
+              0,
+            ),
+          ),
+        )
+      : null;
+  const items = useMemo<CodeViewDiffItem<undefined>[]>(
+    () =>
+      props.renderablePatch.kind === "files"
+        ? props.renderablePatch.files.map((fileDiff, index) => ({
+            id: fileDiff.cacheKey ?? `${resolveFileDiffPath(fileDiff)}:${index}`,
+            type: "diff",
+            fileDiff,
+            collapsed: false,
+          }))
+        : [],
+    [props.renderablePatch],
+  );
+
+  return (
+    <div
+      className="mt-1 ms-7 cursor-default overflow-hidden rounded-md border border-border/45 bg-background"
+      style={viewportHeight === null ? undefined : { height: viewportHeight }}
+    >
+      {props.renderablePatch.kind === "files" ? (
+        <StyledDiffCodeView
+          className="h-full overflow-auto [scrollbar-gutter:stable]"
+          items={items}
+          options={{
+            diffStyle: "split",
+            theme: resolveDiffThemeName(resolvedTheme),
+          }}
+        />
+      ) : (
+        <pre className={cn("p-2", toolCallExpandedBodyClassName)}>{props.renderablePatch.text}</pre>
+      )}
     </div>
   );
 });
