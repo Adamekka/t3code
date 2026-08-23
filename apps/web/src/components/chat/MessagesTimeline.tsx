@@ -2189,6 +2189,12 @@ function workEntryIsRead(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
 }
 
+function workEntryIsWrite(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return (
+    normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "write"
+  );
+}
+
 function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
@@ -2219,7 +2225,7 @@ function workEntryPreview(
     if (todos.length === 0) return "No todos";
     return `${todos.filter((todo) => todo.status === "completed").length}/${todos.length} completed`;
   }
-  if (workEntryIsRead(workEntry)) {
+  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry)) {
     const [firstPath] = workEntry.changedFiles ?? [];
     if (!firstPath) return null;
     return formatWorkspaceRelativePath(firstPath, workspaceRoot);
@@ -2301,7 +2307,8 @@ function buildToolCallExpandedBody(
   } else if (workEntry.detail?.trim()) {
     blocks.push(workEntry.detail.trim());
   }
-  const changedFiles = workEntryIsRead(workEntry) ? [] : (workEntry.changedFiles ?? []);
+  const changedFiles =
+    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) ? [] : (workEntry.changedFiles ?? []);
   if (changedFiles.length > 0) {
     blocks.push(
       changedFiles
@@ -2369,6 +2376,7 @@ function workEntryDisplayText(
   const keepsHeading =
     workEntryIsTodo(workEntry) ||
     workEntryIsRead(workEntry) ||
+    workEntryIsWrite(workEntry) ||
     workEntryIsGlob(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
