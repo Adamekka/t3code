@@ -1810,6 +1810,28 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.editDiff).toEqual({ path: "/workspace/src/index.ts", patch });
   });
 
+  it("extracts normalized Skill presentation data", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "skill-tool",
+        kind: "tool.completed",
+        summary: "skill",
+        payload: {
+          itemType: "dynamic_tool_call",
+          status: "completed",
+          detail: "# Unslop\n\nEdit text to remove AI patterns.",
+          data: { kind: "skill", name: "unslop", detailFormat: "markdown" },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      detail: "# Unslop\n\nEdit text to remove AI patterns.",
+      skillName: "unslop",
+      skillDetailIsMarkdown: true,
+    });
+  });
+
   it("drops duplicated tool detail when it only repeats the title", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

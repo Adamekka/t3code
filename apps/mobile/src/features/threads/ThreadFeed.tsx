@@ -1732,6 +1732,7 @@ function renderFeedEntry(
       rowSizing={props.workRowSizing}
       scrollPositions={props.workGroupScrollPositions}
       iconSubtleColor={iconSubtleColor}
+      markdownStyle={markdownStyles.assistant}
       themeAppearance={props.themeAppearance}
       workspaceRoot={props.workspaceRoot}
       onCopyRow={props.onCopyWorkRow}

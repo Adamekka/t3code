@@ -44,6 +44,9 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (entry.searchQuery) {
     return `${displayHeading} - ${entry.searchQuery}`;
   }
+  if (entry.skillName !== undefined) {
+    return entry.skillName ? `${displayHeading} - ${entry.skillName}` : displayHeading;
+  }
   if (entry.todoItems !== undefined) {
     const completed = entry.todoItems.filter((todo) => todo.status === "completed").length;
     const progress = entry.todoItems.length === 0 ? "No todos" : `${completed}/${entry.todoItems.length} completed`;
