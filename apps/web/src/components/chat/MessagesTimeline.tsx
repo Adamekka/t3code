@@ -2503,6 +2503,7 @@ function workEntryDisplayText(
     workEntryIsTodo(workEntry) ||
     workEntryIsRead(workEntry) ||
     workEntryIsGlob(workEntry) ||
+    workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
   return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
 }
