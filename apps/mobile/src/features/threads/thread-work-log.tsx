@@ -2,7 +2,7 @@ import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
 import { MaskedView } from "@expo/ui/community/masked-view";
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useId, useState, type ComponentProps } from "react";
+import { useEffect, useId, useState, type ComponentProps, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   AppState,
@@ -283,11 +283,16 @@ export function ThreadWorkLog(props: {
   readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string) => void;
+  readonly renderEditDiff: (activityId: string, patch: string) => ReactNode;
   readonly renderImage: MarkdownImageRenderer;
 }) {
   const rows = props.activities.map((activity) => ({
     ...activity,
-    detail: compactActivityDetail(activity.detail),
+    detail: activity.editDiff
+      ? (resolveWorkspaceRelativeFilePath(props.workspaceRoot, activity.editDiff.path) ??
+        compactActivityDetail(activity.detail) ??
+        activity.editDiff.path)
+      : compactActivityDetail(activity.detail),
   }));
 
   if (rows.length === 0) {
@@ -413,7 +418,15 @@ export function ThreadWorkLog(props: {
                 </View>
               </Pressable>
 
-              {fullDetail ? (
+              {expanded && row.editDiff ? (
+                <Animated.View
+                  entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
+                  exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
+                  layout={WORK_LOG_LAYOUT_TRANSITION}
+                >
+                  {props.renderEditDiff(row.id, row.editDiff.patch)}
+                </Animated.View>
+              ) : fullDetail ? (
                 <Animated.View
                   entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
                   exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
