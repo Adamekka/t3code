@@ -377,7 +377,7 @@ export function ThreadWorkLog(props: {
 
               {expanded && row.editDiff ? (
                 <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
-              ) : fullDetail && row.skillDetailIsMarkdown ? (
+              ) : fullDetail && (row.skillDetailIsMarkdown || row.taskDetailIsMarkdown) ? (
                 <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
                   <ScrollView nestedScrollEnabled showsVerticalScrollIndicator className="max-h-60">
                     <Markdown
