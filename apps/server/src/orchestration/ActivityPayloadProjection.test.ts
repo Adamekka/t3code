@@ -272,6 +272,59 @@ describe("projectActivityPayload", () => {
     expect((projected.payload as Record<string, unknown>).data).toEqual({ command: "ls" });
   });
 
+  it("retains OpenCode's written path and full contents", () => {
+    const contents = "export const value = 1;\n\n";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "completed",
+        detail: "Wrote file successfully.",
+        data: {
+          tool: "write",
+          state: {
+            status: "completed",
+            input: { filePath: "/workspace/src/index.ts", content: contents },
+            output: "Wrote file successfully.",
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(contents);
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      files: [{ path: "/workspace/src/index.ts" }],
+    });
+  });
+
+  it.each([
+    {
+      name: "failed",
+      status: "failed",
+      detail: "EACCES: permission denied",
+      input: { filePath: "/workspace/src/index.ts" },
+    },
+    {
+      name: "pathless",
+      status: "completed",
+      detail: "Wrote file successfully.",
+      input: {},
+    },
+  ])("preserves $name OpenCode write details", ({ status, detail, input }) => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status,
+        detail,
+        data: {
+          tool: "write",
+          state: { status, input, output: detail },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(detail);
+  });
+
   it("normalizes stored OpenCode read output and retains its path", () => {
     const projected = projectActivityPayload(
       activity({

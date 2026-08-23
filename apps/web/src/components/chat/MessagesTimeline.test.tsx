@@ -1131,6 +1131,35 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("contents without a recoverable path");
   });
 
+  it("shows Write paths while keeping contents out of the compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-write",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-write",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "write",
+              tone: "tool",
+              itemType: "file_change",
+              detail: "export const value = 1;",
+              changedFiles: ["/workspace/src/index.ts"],
+            },
+          },
+        ]}
+        workspaceRoot="/workspace"
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Write - workspace/src/index.ts"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("export const value = 1;");
+  });
+
   it("shows Glob patterns without matched paths in the compact row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
