@@ -2246,6 +2246,10 @@ function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
 
+function workEntryIsSkill(workEntry: Pick<TimelineWorkEntry, "skillName">): boolean {
+  return workEntry.skillName !== undefined;
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2259,12 +2263,14 @@ function workEntryPreview(
     | "command"
     | "globPattern"
     | "searchQuery"
+    | "skillName"
     | "todoItems"
     | "changedFiles"
   >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
+  if (workEntryIsSkill(workEntry)) return workEntry.skillName ?? null;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntry.todoItems !== undefined) {
@@ -2432,6 +2438,7 @@ function workEntryDisplayText(
     workEntryIsWrite(workEntry) ||
     workEntryIsEdit(workEntry) ||
     workEntryIsGlob(workEntry) ||
+    workEntryIsSkill(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
   return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
@@ -2703,19 +2710,37 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 <TodoChecklist items={workEntry.todoItems} />
               ) : null}
               {expandedBody ? (
-                <pre
-                  className={cn(
-                    workEntry.todoItems !== undefined && "mt-1",
-                    toolCallExpandedBodyClassName,
-                  )}
-                >
-                  {expandedBody}
-                </pre>
+                workEntry.skillDetailIsMarkdown ? (
+                  <SkillToolMarkdown text={expandedBody} />
+                ) : (
+                  <pre
+                    className={cn(
+                      workEntry.todoItems !== undefined && "mt-1",
+                      toolCallExpandedBodyClassName,
+                    )}
+                  >
+                    {expandedBody}
+                  </pre>
+                )
               ) : null}
             </div>
           ) : null}
         </>
       ) : null}
+    </div>
+  );
+});
+
+const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="max-h-64 overflow-auto pe-2 text-sm">
+      <ChatMarkdown
+        text={props.text}
+        cwd={ctx.markdownCwd}
+        threadRef={ctx.threadRef ?? undefined}
+        skills={ctx.skills}
+      />
     </div>
   );
 });
