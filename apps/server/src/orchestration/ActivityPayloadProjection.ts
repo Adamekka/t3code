@@ -380,6 +380,7 @@ export function projectActivityPayload(
     data.kind === "glob" ||
     activity.summary.trim().toLowerCase() === "glob";
   const toolName = asTrimmedString(data.tool) ?? asTrimmedString(data.toolName);
+  const isOpenCodeEditActivity = toolName?.toLowerCase() === "edit";
   const isOpenCodeWriteActivity = toolName?.toLowerCase() === "write";
   const isOpenCodeGrepActivity = toolName?.toLowerCase() === "grep";
   const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
@@ -391,6 +392,23 @@ export function projectActivityPayload(
   const readInputPath =
     isReadActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const readPath = readOutput?.path ?? readInputPath;
+  const editMetadata = isOpenCodeEditActivity ? asRecord(state?.metadata) : null;
+  const editFileDiff = asRecord(editMetadata?.filediff);
+  const editInputPath = isOpenCodeEditActivity
+    ? (asTrimmedString(input?.filePath) ?? asTrimmedString(editFileDiff?.file) ?? "")
+    : "";
+  const metadataEditPatch =
+    typeof editMetadata?.diff === "string" && editMetadata.diff.trim().length > 0
+      ? editMetadata.diff
+      : null;
+  const fileEditPatch =
+    typeof editFileDiff?.patch === "string" && editFileDiff.patch.trim().length > 0
+      ? editFileDiff.patch
+      : null;
+  const editPatch =
+    isOpenCodeEditActivity && statusProjectedPayload.status === "completed"
+      ? (metadataEditPatch ?? fileEditPatch)
+      : null;
   const writeInputPath =
     isOpenCodeWriteActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const writeContent =
@@ -457,6 +475,9 @@ export function projectActivityPayload(
   if (readPath) {
     pushChangedFile(changedFiles, seenChangedFiles, readPath);
   }
+  if (editInputPath) {
+    pushChangedFile(changedFiles, seenChangedFiles, editInputPath);
+  }
   if (writeInputPath) {
     pushChangedFile(changedFiles, seenChangedFiles, writeInputPath);
   }
@@ -483,6 +504,9 @@ export function projectActivityPayload(
   }
   if (globPattern) {
     projectedData.pattern = globPattern;
+  }
+  if (editInputPath && editPatch) {
+    projectedData.edit = { path: editInputPath, patch: editPatch };
   }
   if (isSearchActivity) {
     const searchInput = rawInput ?? input;
@@ -574,6 +598,14 @@ export function projectActivityPayload(
     isOpenCodeWriteActivity &&
     statusProjectedPayload.status === "completed" &&
     payload.detail === "Wrote file successfully." &&
+    changedFiles.length > 0
+  ) {
+    delete projectedPayload.detail;
+  }
+  if (
+    isOpenCodeEditActivity &&
+    statusProjectedPayload.status === "completed" &&
+    payload.detail === "Edit applied successfully." &&
     changedFiles.length > 0
   ) {
     delete projectedPayload.detail;
