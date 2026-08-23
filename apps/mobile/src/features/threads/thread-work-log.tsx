@@ -17,6 +17,12 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Markdown,
+  type CustomRenderers,
+  type NodeStyleOverrides,
+  type PartialMarkdownTheme,
+} from "react-native-nitro-markdown";
+import {
   AccessibilityInfo,
   AppState,
   type ColorValue,
@@ -375,6 +381,11 @@ interface ThreadWorkLogProps {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly scrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
   readonly iconSubtleColor: ColorValue;
+  readonly markdownStyle: {
+    readonly theme: PartialMarkdownTheme;
+    readonly styles: NodeStyleOverrides;
+    readonly renderers: CustomRenderers;
+  };
   readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string, anchorKey: string) => void;
@@ -392,6 +403,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
         copied={props.copiedRowId === row.id}
         expanded={props.expandedRows[row.id] ?? false}
         iconSubtleColor={props.iconSubtleColor}
+        markdownStyle={props.markdownStyle}
         workspaceRoot={props.workspaceRoot}
         onCopyRow={props.onCopyRow}
         onToggleRow={props.onToggleRow}
@@ -404,6 +416,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
       props.copiedRowId,
       props.expandedRows,
       props.iconSubtleColor,
+      props.markdownStyle,
       props.onCopyRow,
       props.onToggleRow,
       props.renderEditDiff,
@@ -795,6 +808,24 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
           layout={WORK_LOG_LAYOUT_TRANSITION}
         >
           {props.renderEditDiff(row.id, row.editDiff.patch)}
+        </Animated.View>
+      ) : fullDetail && row.skillDetailIsMarkdown ? (
+        <Animated.View
+          entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
+          exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
+          layout={WORK_LOG_LAYOUT_TRANSITION}
+          className="ml-7 border-l border-adaptive-neutral-300-a60-white-a12 pb-1 pl-3 pt-0.5"
+        >
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator className="max-h-60">
+            <Markdown
+              options={{ gfm: true }}
+              renderers={props.markdownStyle.renderers}
+              styles={props.markdownStyle.styles}
+              theme={props.markdownStyle.theme}
+            >
+              {fullDetail}
+            </Markdown>
+          </ScrollView>
         </Animated.View>
       ) : fullDetail ? (
         <Animated.View
