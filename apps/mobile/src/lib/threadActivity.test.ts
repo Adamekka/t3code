@@ -1513,13 +1513,43 @@ describe("buildThreadFeed", () => {
       expanded: false,
     });
 
-    const expanded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
+    const expanded = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set([turnId]),
+      new Set(["work-group:tool-completed"]),
+    );
     expect(expanded.map((entry) => entry.id)).toEqual([
       "assistant-first",
       "turn-fold:turn-1",
       "work-toggle:work-group:tool-completed",
+      "work-details:work-group:tool-completed",
       "assistant-final",
     ]);
+
+    const defaultExpanded = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set(),
+      new Set(),
+      null,
+      { expandToolCallsByDefault: true },
+    );
+    expect(defaultExpanded.map((entry) => entry.id)).toEqual(expanded.map((entry) => entry.id));
+    expect(defaultExpanded[1]).toMatchObject({ type: "turn-fold", expanded: true });
+
+    const manuallyCollapsed = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set(),
+      new Set(),
+      null,
+      {
+        collapsedTurnIds: new Set([turnId]),
+        expandToolCallsByDefault: true,
+      },
+    );
+    expect(manuallyCollapsed.map((entry) => entry.id)).toEqual(collapsed.map((entry) => entry.id));
   });
 
   it("folds assistant messages between the first and terminal messages", () => {
@@ -1806,6 +1836,17 @@ describe("buildThreadFeed", () => {
         { id: "activity-3", groupedToolDetail: true, live: false },
       ],
     });
+
+    const defaultExpanded = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, {
+      expandToolCallsByDefault: true,
+    });
+    expect(defaultExpanded.map((entry) => entry.id)).toEqual(expanded.map((entry) => entry.id));
+
+    const manuallyCollapsed = deriveThreadFeedPresentation(feed, null, new Set(), new Set(), null, {
+      collapsedWorkGroupIds: new Set(["work-group:activity-1"]),
+      expandToolCallsByDefault: true,
+    });
+    expect(manuallyCollapsed.map((entry) => entry.id)).toEqual(collapsed.map((entry) => entry.id));
   });
 
   it.each(

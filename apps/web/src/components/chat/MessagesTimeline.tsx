@@ -114,6 +114,7 @@ import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
   liveWorkEntryLabel,
+  normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -150,6 +151,7 @@ import {
 } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
+import { useClientSettings } from "~/hooks/useSettings";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
@@ -360,14 +362,35 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   topFadeEnabled = false,
   loadEarlier = null,
 }: MessagesTimelineProps) {
-  const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
+  const expandToolCallsByDefault = useClientSettings(
+    (settings) => settings.expandToolCallsByDefault,
+  );
+  const [disclosureOverrides, setDisclosureOverrides] = useState<{
+    readonly expandedTurnIds: ReadonlySet<TurnId>;
+    readonly collapsedTurnIds: ReadonlySet<TurnId>;
+    readonly expandedWorkGroupIds: ReadonlySet<string>;
+    readonly collapsedWorkGroupIds: ReadonlySet<string>;
+  }>({
+    expandedTurnIds: new Set(),
+    collapsedTurnIds: new Set(),
+    expandedWorkGroupIds: new Set(),
+    collapsedWorkGroupIds: new Set(),
+  });
+  const { expandedTurnIds, collapsedTurnIds, expandedWorkGroupIds, collapsedWorkGroupIds } =
+    disclosureOverrides;
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const expandCitedTurn = useCallback((turnId: TurnId) => {
-    setExpandedTurnIds((current) =>
-      current.has(turnId) ? current : new Set([...current, turnId]),
-    );
+    setDisclosureOverrides((current) => {
+      if (current.expandedTurnIds.has(turnId) && !current.collapsedTurnIds.has(turnId)) {
+        return current;
+      }
+      const expanded = new Set(current.expandedTurnIds);
+      const collapsed = new Set(current.collapsedTurnIds);
+      expanded.add(turnId);
+      collapsed.delete(turnId);
+      return { ...current, expandedTurnIds: expanded, collapsedTurnIds: collapsed };
+    });
   }, []);
-  const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   // Scroll/disclosure state outlives virtualized rows, but never the current thread.
   const workGroupViewState = useMemo<WorkGroupViewState>(
     () => ({ scrollPositions: new Map(), expandedEntries: new Set() }),
@@ -427,36 +450,50 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const onToggleTurnFold = useCallback(
     (turnId: TurnId) => {
       suspendEndScrollMaintenanceForDisclosure(`turn-fold:${turnId}`);
-      setExpandedTurnIds((existing) => {
-        const next = new Set(existing);
-        if (next.has(turnId)) {
-          next.delete(turnId);
+      setDisclosureOverrides((current) => {
+        const expanded = new Set(current.expandedTurnIds);
+        const collapsed = new Set(current.collapsedTurnIds);
+        const isExpanded =
+          expanded.has(turnId) || (expandToolCallsByDefault && !collapsed.has(turnId));
+        if (isExpanded) {
+          expanded.delete(turnId);
+          collapsed.add(turnId);
         } else {
-          next.add(turnId);
+          expanded.add(turnId);
+          collapsed.delete(turnId);
         }
-        return next;
+        return { ...current, expandedTurnIds: expanded, collapsedTurnIds: collapsed };
       });
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [expandToolCallsByDefault, suspendEndScrollMaintenanceForDisclosure],
   );
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorKey: string) => {
       suspendEndScrollMaintenanceForDisclosure(anchorKey);
-      setExpandedWorkGroupIds((existing) => {
-        const next = new Set(existing);
-        if (next.has(groupId)) {
-          next.delete(groupId);
+      setDisclosureOverrides((current) => {
+        const expanded = new Set(current.expandedWorkGroupIds);
+        const collapsed = new Set(current.collapsedWorkGroupIds);
+        const isExpanded =
+          expanded.has(groupId) || (expandToolCallsByDefault && !collapsed.has(groupId));
+        if (isExpanded) {
+          expanded.delete(groupId);
+          collapsed.add(groupId);
         } else {
-          next.add(groupId);
+          expanded.add(groupId);
+          collapsed.delete(groupId);
         }
-        return next;
+        return {
+          ...current,
+          expandedWorkGroupIds: expanded,
+          collapsedWorkGroupIds: collapsed,
+        };
       });
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [expandToolCallsByDefault, suspendEndScrollMaintenanceForDisclosure],
   );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
-  // place; the next turn (or a reload, since this is local state) folds it.
+  // place; the next turn removes that override and restores the configured default.
   const previousLatestTurnRef = useRef(latestTurn);
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
@@ -466,21 +503,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
     if (latestTurn.turnId === previous.turnId) {
       if (previous.state === "running" && latestTurn.state === "interrupted") {
-        setExpandedTurnIds((existing) => {
-          const next = new Set(existing);
-          next.add(latestTurn.turnId);
-          return next;
+        setDisclosureOverrides((current) => {
+          const expanded = new Set(current.expandedTurnIds);
+          const collapsed = new Set(current.collapsedTurnIds);
+          expanded.add(latestTurn.turnId);
+          collapsed.delete(latestTurn.turnId);
+          return { ...current, expandedTurnIds: expanded, collapsedTurnIds: collapsed };
         });
       }
       return;
     }
-    setExpandedTurnIds((existing) => {
-      if (!existing.has(previous.turnId)) {
-        return existing;
-      }
-      const next = new Set(existing);
-      next.delete(previous.turnId);
-      return next;
+    setDisclosureOverrides((current) => {
+      if (!current.expandedTurnIds.has(previous.turnId)) return current;
+      const expanded = new Set(current.expandedTurnIds);
+      expanded.delete(previous.turnId);
+      return { ...current, expandedTurnIds: expanded };
     });
   }, [latestTurn]);
 
@@ -491,7 +528,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         latestTurn,
         runningTurnId,
         expandedTurnIds,
+        collapsedTurnIds,
         expandedWorkGroupIds,
+        collapsedWorkGroupIds,
+        expandToolCallsByDefault,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
@@ -502,7 +542,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       latestTurn,
       runningTurnId,
       expandedTurnIds,
+      collapsedTurnIds,
       expandedWorkGroupIds,
+      collapsedWorkGroupIds,
+      expandToolCallsByDefault,
       isWorking,
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
