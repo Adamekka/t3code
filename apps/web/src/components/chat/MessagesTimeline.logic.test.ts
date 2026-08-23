@@ -568,6 +568,27 @@ describe("deriveMessagesTimelineRows", () => {
     expect(
       expandedRows.find((row) => row.kind === "turn-fold" && row.expanded === true),
     ).toBeDefined();
+
+    const defaultExpandedRows = deriveMessagesTimelineRows({
+      timelineEntries,
+      expandToolCallsByDefault: true,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+    expect(defaultExpandedRows.map((row) => row.id)).toEqual(expandedRows.map((row) => row.id));
+
+    const manuallyCollapsedRows = deriveMessagesTimelineRows({
+      timelineEntries,
+      collapsedTurnIds: new Set(["turn-1" as never]),
+      expandToolCallsByDefault: true,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+    expect(manuallyCollapsedRows.map((row) => row.id)).toEqual(collapsedRows.map((row) => row.id));
   });
 
   it("folds all assistant messages before the terminal message", () => {

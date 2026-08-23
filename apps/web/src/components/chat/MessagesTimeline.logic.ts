@@ -655,13 +655,22 @@ export function deriveMessagesTimelineRows(input: {
   latestTurn?: TimelineLatestTurn | null;
   runningTurnId?: TurnId | null;
   expandedTurnIds?: ReadonlySet<TurnId>;
+  collapsedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
+  collapsedWorkGroupIds?: ReadonlySet<string>;
+  expandToolCallsByDefault?: boolean;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   revertTurnCountByUserMessageId: ReadonlyMap<MessageId, number>;
 }): MessagesTimelineRow[] {
   const nextRows: MessagesTimelineRow[] = [];
+  const turnIsExpanded = (turnId: TurnId) =>
+    input.expandedTurnIds?.has(turnId) === true ||
+    (input.expandToolCallsByDefault === true && !input.collapsedTurnIds?.has(turnId));
+  const workGroupIsExpanded = (groupId: string) =>
+    input.expandedWorkGroupIds?.has(groupId) === true ||
+    (input.expandToolCallsByDefault === true && !input.collapsedWorkGroupIds?.has(groupId));
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
@@ -678,7 +687,7 @@ export function deriveMessagesTimelineRows(input: {
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
-    if (!input.expandedTurnIds?.has(fold.turnId)) {
+    if (!turnIsExpanded(fold.turnId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -757,7 +766,7 @@ export function deriveMessagesTimelineRows(input: {
             entry: latestActiveToolEntry.entry,
             groupedEntries: visibleActiveToolEntries.map((entry) => entry.entry),
             groupId,
-            expanded: input.expandedWorkGroupIds?.has(groupId) ?? false,
+            expanded: workGroupIsExpanded(groupId),
           };
         })()
       : null;
@@ -807,7 +816,7 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: anchoredTurnFold.createdAt,
         turnId: anchoredTurnFold.turnId,
         label: anchoredTurnFold.label,
-        expanded: input.expandedTurnIds?.has(anchoredTurnFold.turnId) ?? false,
+        expanded: turnIsExpanded(anchoredTurnFold.turnId),
       });
     }
 
@@ -884,7 +893,7 @@ export function deriveMessagesTimelineRows(input: {
           const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
           if (activeInProgressToolEntries.length > 0) {
             const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+            const expanded = workGroupIsExpanded(groupId);
             const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
             nextRows.push({
               kind: "work-live",
@@ -909,7 +918,7 @@ export function deriveMessagesTimelineRows(input: {
             }
           } else {
             const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+            const expanded = workGroupIsExpanded(groupId);
             const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
             const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
             nextRows.push({
