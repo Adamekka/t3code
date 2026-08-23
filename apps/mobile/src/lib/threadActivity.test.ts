@@ -1410,6 +1410,43 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toBe("1: # Instructions\n2: Keep it small.");
   });
 
+  it("shows Write paths while expanding only the written contents", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-write"),
+      projectId: ProjectId.make("project-1"),
+      title: "Write file",
+      activities: [
+        makeActivity({
+          id: EventId.make("write-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "write",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "file_change",
+            detail: "export const value = 1;",
+            data: {
+              files: [{ path: "/workspace/src/index.ts" }],
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Write",
+      detail: "/workspace/src/index.ts",
+      icon: "edit",
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe("export const value = 1;");
+  });
+
   it("shows Glob patterns while expanding matched paths", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-glob"),

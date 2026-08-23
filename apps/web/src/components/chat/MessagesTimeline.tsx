@@ -2873,6 +2873,12 @@ function workEntryIsRead(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
 }
 
+function workEntryIsWrite(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return (
+    normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "write"
+  );
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2930,7 +2936,8 @@ function buildToolCallExpandedBody(
   } else if (workEntry.detail?.trim()) {
     blocks.push(workEntry.detail.trim());
   }
-  const changedFiles = workEntryIsRead(workEntry) ? [] : (workEntry.changedFiles ?? []);
+  const changedFiles =
+    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) ? [] : (workEntry.changedFiles ?? []);
   if (changedFiles.length > 0) {
     blocks.push(
       changedFiles
