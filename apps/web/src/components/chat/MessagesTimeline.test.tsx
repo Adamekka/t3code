@@ -1091,6 +1091,38 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("export const value = 1;");
   });
 
+  it("shows Edit paths while keeping the patch out of the compact row", () => {
+    const patch =
+      "--- /workspace/src/index.ts\n+++ /workspace/src/index.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-edit",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-edit",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "edit",
+              tone: "tool",
+              itemType: "file_change",
+              changedFiles: ["/workspace/src/index.ts"],
+              editDiff: { path: "/workspace/src/index.ts", patch },
+            },
+          },
+        ]}
+        workspaceRoot="/workspace"
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Edit - workspace/src/index.ts"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("-old");
+    expect(markup).not.toContain("+new");
+  });
+
   it("shows Glob patterns without matched paths in the compact row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline

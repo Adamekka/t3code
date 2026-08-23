@@ -408,6 +408,7 @@ interface ThreadWorkLogProps {
   readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string, anchorKey: string) => void;
+  readonly renderEditDiff: (activityId: string, patch: string) => ReactNode;
   readonly renderImage: MarkdownImageRenderer;
 }
 
@@ -425,6 +426,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
         workspaceRoot={props.workspaceRoot}
         onCopyRow={props.onCopyRow}
         onToggleRow={props.onToggleRow}
+        renderEditDiff={props.renderEditDiff}
         renderImage={props.renderImage}
         themeAppearance={props.themeAppearance}
       />
@@ -437,6 +439,7 @@ export function ThreadWorkLog(props: ThreadWorkLogProps) {
       props.iconSubtleColor,
       props.onCopyRow,
       props.onToggleRow,
+      props.renderEditDiff,
       props.renderImage,
       props.themeAppearance,
       props.workspaceRoot,
@@ -719,7 +722,11 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
     : null;
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
-  const detail = compactActivityDetail(row.detail);
+  const detail = row.editDiff
+    ? (resolveWorkspaceRelativeFilePath(props.workspaceRoot, row.editDiff.path) ??
+      compactActivityDetail(row.detail) ??
+      row.editDiff.path)
+    : compactActivityDetail(row.detail);
   const previewText =
     toolPresentation?.displayName ??
     (row.workEntry.searchQuery && detail ? `${row.summary} ${detail}` : detail) ??
@@ -836,7 +843,15 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
         </View>
       </Pressable>
 
-      {fullDetail ? (
+      {expanded && row.editDiff ? (
+        <Animated.View
+          entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
+          exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
+          layout={WORK_LOG_LAYOUT_TRANSITION}
+        >
+          {props.renderEditDiff(row.id, row.editDiff.patch)}
+        </Animated.View>
+      ) : fullDetail ? (
         <Animated.View
           entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
           exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}

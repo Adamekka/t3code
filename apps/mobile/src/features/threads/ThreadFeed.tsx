@@ -1498,6 +1498,7 @@ function renderFeedEntry(
     readonly onPressVideo: (attachment: ChatFileAttachment, sourceIdentifier: string) => void;
     readonly markdownLinkHandlers: MarkdownLinkHandlers;
     readonly renderMarkdownImage: MarkdownImageRenderer;
+    readonly renderEditDiff: (activityId: string, patch: string) => ReactNode;
     readonly renderViewedImage: MarkdownImageRenderer;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
     readonly userBubbleColor: string | import("react-native").ColorValue;
@@ -1735,6 +1736,7 @@ function renderFeedEntry(
       workspaceRoot={props.workspaceRoot}
       onCopyRow={props.onCopyWorkRow}
       onToggleRow={props.onToggleWorkRow}
+      renderEditDiff={props.renderEditDiff}
       renderImage={props.renderViewedImage}
     />
   );
@@ -1818,6 +1820,78 @@ function UserMessageContent(props: {
     </View>
   );
 }
+
+const EditToolDiff = memo(function EditToolDiff(props: {
+  readonly activityId: string;
+  readonly patch: string;
+}) {
+  const { codeSurface, nativeReviewDiffStyle } = useAppearanceCodeSurface();
+  const { themeAppearance: appearanceScheme, themeId } = useAppearancePreferences();
+  const appTheme = useUniwindTheme();
+  const NativeReviewDiffView = resolveNativeReviewDiffView();
+  const parsedDiff = useMemo(
+    () => buildReviewParsedDiff(props.patch, `tool-edit:${props.activityId}`),
+    [props.activityId, props.patch],
+  );
+  const nativeReviewDiffData = useMemo(() => buildNativeReviewDiffData(parsedDiff), [parsedDiff]);
+  const rows = useMemo(
+    () => nativeReviewDiffData.rows.filter((row) => row.kind !== "file"),
+    [nativeReviewDiffData.rows],
+  );
+  const theme = useMemo(
+    () => createNativeReviewDiffTheme(appearanceScheme, themeId, appTheme),
+    [appearanceScheme, appTheme, themeId],
+  );
+  const rowsJson = useMemo(() => JSON.stringify(rows), [rows]);
+  const themeJson = useMemo(() => JSON.stringify(theme), [theme]);
+  const styleJson = useMemo(() => JSON.stringify(nativeReviewDiffStyle), [nativeReviewDiffStyle]);
+  const height = Math.min(360, Math.max(112, rows.length * nativeReviewDiffStyle.rowHeight));
+
+  if (NativeReviewDiffView && rows.length > 0) {
+    return (
+      <View
+        className="ml-7 overflow-hidden rounded-md border border-border-subtle"
+        collapsable={false}
+        style={{ backgroundColor: theme.background, height }}
+      >
+        <NativeReviewDiffView
+          collapsable={false}
+          style={StyleSheet.absoluteFill}
+          appearanceScheme={appearanceScheme}
+          contentWidth={NATIVE_REVIEW_DIFF_CONTENT_WIDTH}
+          rowHeight={nativeReviewDiffStyle.rowHeight}
+          rowsJson={rowsJson}
+          styleJson={styleJson}
+          themeJson={themeJson}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      nestedScrollEnabled
+      showsVerticalScrollIndicator
+      className="ml-7 max-h-60 border-l border-adaptive-neutral-300-a60-white-a12 pl-3"
+    >
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 8 }}
+      >
+        <NativeText
+          selectable
+          className="font-mono text-foreground-muted"
+          style={{ fontSize: codeSurface.fontSize, lineHeight: codeSurface.rowHeight }}
+        >
+          {props.patch}
+        </NativeText>
+      </ScrollView>
+    </ScrollView>
+  );
+});
 
 const ReviewCommentCard = memo(function ReviewCommentCard(props: {
   readonly comment: ReviewInlineComment;
@@ -2289,6 +2363,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       );
     },
     [props.environmentId, props.threadId, props.workspaceRoot],
+  );
+  const renderEditDiff = useCallback(
+    (activityId: string, patch: string) => (
+      <EditToolDiff activityId={activityId} patch={patch} />
+    ),
+    [],
   );
   const renderViewedImage = useCallback<MarkdownImageRenderer>(
     (image) => {
@@ -2788,6 +2868,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             onPressVideo,
             markdownLinkHandlers,
             renderMarkdownImage,
+            renderEditDiff,
             renderViewedImage,
             iconSubtleColor,
             userBubbleColor,
@@ -2828,6 +2909,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.onUseArtifactTemplate,
       props.skills,
       props.workspaceRoot,
+      renderEditDiff,
       renderMarkdownImage,
       renderViewedImage,
     ],

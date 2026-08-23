@@ -51,6 +51,7 @@ import {
   type LegendListRef,
   type MaintainScrollAtEndOptions,
 } from "@legendapp/list/react";
+import type { CodeViewDiffItem } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
@@ -123,6 +124,7 @@ import {
 } from "./AssistantCitationSource";
 import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssistantCitationTarget";
 import { TodoChecklist } from "../TodoChecklist";
+import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -2879,6 +2881,10 @@ function workEntryIsWrite(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitl
   );
 }
 
+function workEntryIsEdit(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "edit";
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2937,7 +2943,9 @@ function buildToolCallExpandedBody(
     blocks.push(workEntry.detail.trim());
   }
   const changedFiles =
-    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) ? [] : (workEntry.changedFiles ?? []);
+    workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) || workEntryIsEdit(workEntry)
+      ? []
+      : (workEntry.changedFiles ?? []);
   if (changedFiles.length > 0) {
     blocks.push(
       changedFiles
@@ -3131,6 +3139,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const displayText =
     !toolPresentation && expanded && workEntry.command?.trim() ? "Command" : previewText;
   const canExpand =
+    workEntry.editDiff !== undefined ||
     (workEntry.todoItems?.length ?? 0) > 0 ||
     (workEntry.searchMatches?.length ?? 0) > 0 ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
@@ -3149,6 +3158,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
+  const hasStandardExpandedContent =
+    expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
@@ -3265,25 +3276,94 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           />
         </div>
       ) : null}
-      {expanded &&
-      canExpand &&
-      (expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0) ? (
-        <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
-          {workEntry.todoItems !== undefined && workEntry.todoItems.length > 0 ? (
-            <TodoChecklist items={workEntry.todoItems} />
+      {expanded && canExpand ? (
+        <>
+          {workEntry.editDiff ? (
+            <EditToolDiff
+              activityId={workEntry.id}
+              patch={workEntry.editDiff.patch}
+            />
           ) : null}
-          {expandedBody ? (
-            <pre
-              className={cn(
-                workEntry.todoItems !== undefined && "mt-1",
-                toolCallExpandedBodyClassName,
-              )}
-            >
-              {expandedBody}
-            </pre>
+          {hasStandardExpandedContent ? (
+            <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
+              {workEntry.todoItems !== undefined && workEntry.todoItems.length > 0 ? (
+                <TodoChecklist items={workEntry.todoItems} />
+              ) : null}
+              {expandedBody ? (
+                <pre
+                  className={cn(
+                    workEntry.todoItems !== undefined && "mt-1",
+                    toolCallExpandedBodyClassName,
+                  )}
+                >
+                  {expandedBody}
+                </pre>
+              ) : null}
+            </div>
           ) : null}
-        </div>
+        </>
       ) : null}
+    </div>
+  );
+});
+
+const EditToolDiff = memo(function EditToolDiff(props: { activityId: string; patch: string }) {
+  const { resolvedTheme } = use(TimelineRowCtx);
+  const renderablePatch = useMemo(
+    () =>
+      getRenderablePatch(props.patch, `tool-edit:${props.activityId}`, {
+        compactPartialHunkOffsets: true,
+      }),
+    [props.activityId, props.patch],
+  );
+  // CodeView virtualizes against its own fixed-height scroll element; these values match the
+  // shared adapter's header and hunk metrics while bounding large tool diffs inside the timeline.
+  const viewportHeight =
+    renderablePatch?.kind === "files"
+      ? Math.min(
+          384,
+          Math.max(
+            88,
+            renderablePatch.files.reduce(
+              (height, fileDiff) =>
+                height + 40 + fileDiff.splitLineCount * 20 + fileDiff.hunks.length * 24,
+              0,
+            ),
+          ),
+        )
+      : null;
+  const items = useMemo<CodeViewDiffItem<undefined>[]>(
+    () =>
+      renderablePatch?.kind === "files"
+        ? renderablePatch.files.map((fileDiff, index) => ({
+            id: fileDiff.cacheKey ?? `${resolveFileDiffPath(fileDiff)}:${index}`,
+            type: "diff",
+            fileDiff,
+            collapsed: false,
+          }))
+        : [],
+    [renderablePatch],
+  );
+
+  if (renderablePatch === null) return null;
+
+  return (
+    <div
+      className="mt-1 ms-7 cursor-default overflow-hidden rounded-md border border-border/45 bg-background"
+      style={viewportHeight === null ? undefined : { height: viewportHeight }}
+    >
+      {renderablePatch.kind === "files" ? (
+        <StyledDiffCodeView
+          className="h-full overflow-auto [scrollbar-gutter:stable]"
+          items={items}
+          options={{
+            diffStyle: "split",
+            theme: resolveDiffThemeName(resolvedTheme),
+          }}
+        />
+      ) : (
+        <pre className={cn("p-2", toolCallExpandedBodyClassName)}>{renderablePatch.text}</pre>
+      )}
     </div>
   );
 });
