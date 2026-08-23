@@ -1541,7 +1541,8 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
   return (
     <button
       type="button"
-      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md border-l-2 border-l-icon-muted/50 bg-muted/25 text-left inset-ring-1 inset-ring-border/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      data-tool-call-row="true"
       aria-label={failed ? `${label}, tool call failed` : undefined}
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
@@ -1589,7 +1590,8 @@ function WorkGroupToggleTimelineRow({
     return (
       <button
         type="button"
-        className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md border-l-2 border-l-icon-muted/50 bg-muted/25 px-0.5 py-0.5 text-left text-sm leading-relaxed inset-ring-1 inset-ring-border/45 transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        data-tool-call-row="true"
         aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
@@ -2721,6 +2723,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
+  const isToolLike = workLogEntryIsToolLike(workEntry);
   const entryIconName =
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
   const displayText = workEntryDisplayText(workEntry, workspaceRoot);
@@ -2728,7 +2731,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const canExpand = expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
     showFailedIndicator &&
-    (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
+    (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
@@ -2745,7 +2748,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : workLogEntryIsToolLike(workEntry)
+      : isToolLike
         ? "text-secondary-label"
         : "text-foreground/80";
   const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
@@ -2772,8 +2775,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     <div
       className={cn(
         "flex flex-col rounded-md px-0.5 transition-colors",
+        isToolLike &&
+          "border-l-2 border-l-icon-muted/50 bg-muted/25 inset-ring-1 inset-ring-border/45",
         isExpandedToolGroupEntry ? "py-0" : "py-0.5",
       )}
+      data-tool-call-row={isToolLike ? "true" : undefined}
     >
       <div className="flex min-w-0 items-center gap-1">
         <div
