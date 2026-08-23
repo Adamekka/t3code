@@ -875,7 +875,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   .chat-composer-top-drawer {
     --chat-composer-attachment-overlap: calc(1rem + 1px);
     width: calc(100% - var(--chat-composer-drawer-inset) - var(--chat-composer-drawer-inset));
-    max-width: calc(48rem - var(--chat-composer-drawer-inset) - var(--chat-composer-drawer-inset));
     margin-inline: auto;
     margin-bottom: calc(-1 * var(--chat-composer-attachment-overlap));
   }
