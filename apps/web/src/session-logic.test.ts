@@ -1609,6 +1609,28 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
+  it("extracts structured Edit diff data", () => {
+    const patch =
+      "--- /workspace/src/index.ts\n+++ /workspace/src/index.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "edit-tool",
+        kind: "tool.completed",
+        summary: "edit",
+        payload: {
+          itemType: "file_change",
+          status: "completed",
+          data: {
+            files: [{ path: "/workspace/src/index.ts" }],
+            edit: { path: "/workspace/src/index.ts", patch },
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.editDiff).toEqual({ path: "/workspace/src/index.ts", patch });
+  });
+
   it("drops duplicated tool detail when it only repeats the title", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

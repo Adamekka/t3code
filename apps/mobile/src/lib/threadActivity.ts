@@ -60,6 +60,10 @@ export interface ThreadFeedActivity {
     readonly lineContent: string;
   }>;
   readonly searchMatchCount?: number;
+  readonly editDiff?: {
+    readonly path: string;
+    readonly patch: string;
+  };
 }
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
@@ -89,6 +93,10 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  editDiff?: {
+    path: string;
+    patch: string;
+  };
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -367,6 +375,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
   const data = asRecord(payload?.data);
+  const rawEditDiff = asRecord(data?.edit);
+  const editDiffPath = asTrimmedString(rawEditDiff?.path);
+  const editDiffPatch =
+    typeof rawEditDiff?.patch === "string" && rawEditDiff.patch.trim().length > 0
+      ? rawEditDiff.patch
+      : null;
   const globPattern = asTrimmedString(data?.pattern);
   const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
   const searchQuery =
@@ -470,6 +484,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (editDiffPath && editDiffPatch) {
+    entry.editDiff = { path: editDiffPath, patch: editDiffPatch };
   }
   if (title) {
     entry.toolTitle = title;
@@ -711,6 +728,10 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
 }
 
 function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
+  if (entry.editDiff) {
+    return entry.editDiff.patch;
+  }
+
   const blocks: string[] = [];
   const appendUniqueBlock = (value: string | null | undefined) => {
     const trimmed = value?.trim();
@@ -751,6 +772,7 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
 
 function workEntryHasExpandedBody(entry: WorkLogEntry): boolean {
   return (
+    entry.editDiff !== undefined ||
     (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) ||
     Boolean((entry.rawCommand ?? entry.command)?.trim()) ||
     Boolean(entry.detail?.trim()) ||
@@ -780,6 +802,10 @@ function workEntryIsWrite(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">):
   );
 }
 
+function workEntryIsEdit(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
+  return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "edit";
+}
+
 function workEntryIsGlob(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
@@ -793,7 +819,7 @@ function workEntryPreview(
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
-  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry)) {
+  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry) || workEntryIsEdit(workEntry)) {
     return workEntry.changedFiles?.[0] ?? null;
   }
   if (workEntry.detail) return workEntry.detail;
@@ -1703,6 +1729,7 @@ export function buildThreadFeed(
               ...(entry.searchMatchCount !== undefined
                 ? { searchMatchCount: entry.searchMatchCount }
                 : {}),
+              ...(entry.editDiff ? { editDiff: entry.editDiff } : {}),
             },
           };
         }),
