@@ -2977,7 +2977,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onDragOverCapture={composerMentionDragHandlers.onDragOver}
       onDragLeaveCapture={onComposerMentionDragLeaveCapture}
       onDropCapture={composerMentionDragHandlers.onDrop}
-      className={cn("mx-auto w-full min-w-0 max-w-3xl", hasShoulderTab && "pt-7")}
+      className={cn("w-full min-w-0", hasShoulderTab && "pt-7")}
       data-chat-composer-form="true"
     >
       {showComposerTopDrawer && (!isTasksDrawerOpen || hasBlockingComposerTopDrawer) ? (
