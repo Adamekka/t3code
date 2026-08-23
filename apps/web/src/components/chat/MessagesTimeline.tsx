@@ -2223,6 +2223,10 @@ function workEntryIsGlob(workEntry: Pick<TimelineWorkEntry, "label" | "toolTitle
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
 
+function workEntryIsSkill(workEntry: Pick<TimelineWorkEntry, "skillName">): boolean {
+  return workEntry.skillName !== undefined;
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2236,12 +2240,14 @@ function workEntryPreview(
     | "command"
     | "globPattern"
     | "searchQuery"
+    | "skillName"
     | "todoItems"
     | "changedFiles"
   >,
   workspaceRoot: string | undefined,
 ) {
   if (workEntry.command) return workEntry.command;
+  if (workEntryIsSkill(workEntry)) return workEntry.skillName ?? null;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntry.todoItems !== undefined) {
@@ -2575,6 +2581,7 @@ function workEntryDisplayText(
     workEntryIsWrite(workEntry) ||
     workEntryIsEdit(workEntry) ||
     workEntryIsGlob(workEntry) ||
+    workEntryIsSkill(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
   return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
@@ -2826,9 +2833,27 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         <EditToolDiff renderablePatch={editRenderablePatch} />
       ) : expanded && canExpand && expandedBody ? (
         <div className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
-          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          {workEntry.skillDetailIsMarkdown ? (
+            <SkillToolMarkdown text={expandedBody} />
+          ) : (
+            <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          )}
         </div>
       ) : null}
+    </div>
+  );
+});
+
+const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="max-h-64 overflow-auto pe-2 text-sm">
+      <ChatMarkdown
+        text={props.text}
+        cwd={ctx.markdownCwd}
+        threadRef={ctx.threadRef ?? undefined}
+        skills={ctx.skills}
+      />
     </div>
   );
 });
