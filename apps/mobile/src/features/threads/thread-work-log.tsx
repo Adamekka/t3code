@@ -131,6 +131,7 @@ export function ThreadWorkLog(props: {
   readonly onToggleRow: (rowId: string) => void;
 }) {
   const pressedBackground = useThemeColor("--color-subtle");
+  const toolPressedBackground = useThemeColor("--color-subtle-strong");
   const rows = visibleWorkLogActivities(props.activities).map((activity) => ({
     ...activity,
     detail: compactActivityDetail(activity.detail),
@@ -177,6 +178,7 @@ export function ThreadWorkLog(props: {
           return (
             <Animated.View
               key={row.id}
+              className={cn(row.toolLike && "relative rounded-md bg-subtle")}
               {...(isFreshRow(row.createdAt) ? { entering: FadeIn.duration(200) } : {})}
             >
               <Pressable
@@ -197,7 +199,11 @@ export function ThreadWorkLog(props: {
                 }}
                 onLongPress={() => props.onCopyRow(row.id, row.getCopyText())}
                 style={({ pressed }) => ({
-                  backgroundColor: pressed ? pressedBackground : "transparent",
+                  backgroundColor: pressed
+                    ? row.toolLike
+                      ? toolPressedBackground
+                      : pressedBackground
+                    : "transparent",
                 })}
                 className="rounded-md px-0.5 py-0"
               >
@@ -283,6 +289,12 @@ export function ThreadWorkLog(props: {
                     </Text>
                   </ScrollView>
                 </View>
+              ) : null}
+              {row.toolLike ? (
+                <View
+                  pointerEvents="none"
+                  className="absolute inset-0 rounded-md border border-border-subtle border-l-2 border-l-icon-subtle"
+                />
               ) : null}
             </Animated.View>
           );
