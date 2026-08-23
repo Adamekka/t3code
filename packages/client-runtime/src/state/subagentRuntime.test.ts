@@ -148,15 +148,127 @@ describe("foldSubagentActivities", () => {
 
   it("reactivation increments the run count and clears result/error", () => {
     const agents = fold([
-      activity("task.started", { taskId: "task-4", taskType: "local_agent" }),
-      activity("task.completed", { taskId: "task-4", status: "completed", summary: "run 1 done" }),
-      activity("task.updated", { taskId: "task-4", status: "running" }),
+      activity("task.started", {
+        taskId: "task-4",
+        taskType: "local_agent",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-4",
+        status: "completed",
+        summary: "run 1 done",
+        toolUseId: "call-1",
+      }),
+      activity("task.updated", { taskId: "task-4", status: "running", toolUseId: "call-2" }),
     ]);
     const agent = agents[0]!;
     expect(agent.activationCount).toBe(2);
     expect(agent.result).toBeNull();
     expect(agent.completedAt).toBeNull();
     expect(agent.status).toBe("running");
+  });
+
+  it("does not reopen a completed activation for a late running update", () => {
+    const [agent] = fold([
+      activity("task.started", {
+        taskId: "task-late-running",
+        taskType: "local_agent",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-late-running",
+        status: "completed",
+        summary: "done",
+        toolUseId: "call-1",
+      }),
+      activity("task.updated", {
+        taskId: "task-late-running",
+        status: "running",
+        toolUseId: "call-1",
+      }),
+    ]);
+
+    expect(agent?.activationCount).toBe(1);
+    expect(agent?.result).toBe("done");
+    expect(agent?.status).toBe("completed");
+  });
+
+  it("does not reopen an older activation after a newer activation completed", () => {
+    const [agent] = fold([
+      activity("task.started", {
+        taskId: "task-multiple-late-running",
+        taskType: "local_agent",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-multiple-late-running",
+        status: "completed",
+        toolUseId: "call-1",
+      }),
+      activity("task.updated", {
+        taskId: "task-multiple-late-running",
+        status: "running",
+        toolUseId: "call-2",
+      }),
+      activity("task.updated", {
+        taskId: "task-multiple-late-running",
+        status: "waiting",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-multiple-late-running",
+        status: "completed",
+        summary: "latest result",
+        toolUseId: "call-2",
+      }),
+      activity("task.updated", {
+        taskId: "task-multiple-late-running",
+        status: "running",
+        toolUseId: "call-1",
+      }),
+    ]);
+
+    expect(agent?.activationCount).toBe(2);
+    expect(agent?.result).toBe("latest result");
+    expect(agent?.status).toBe("completed");
+  });
+
+  it("ignores stale completion and progress while a newer activation is running", () => {
+    const [agent] = fold([
+      activity("task.started", {
+        taskId: "task-stale-old-activation",
+        taskType: "local_agent",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-stale-old-activation",
+        status: "completed",
+        summary: "old result",
+        toolUseId: "call-1",
+      }),
+      activity("task.updated", {
+        taskId: "task-stale-old-activation",
+        status: "running",
+        toolUseId: "call-2",
+      }),
+      activity("task.progress", {
+        taskId: "task-stale-old-activation",
+        description: "old progress",
+        summary: "stale progress",
+        toolUseId: "call-1",
+      }),
+      activity("task.completed", {
+        taskId: "task-stale-old-activation",
+        status: "completed",
+        summary: "stale result",
+        toolUseId: "call-1",
+      }),
+    ]);
+
+    expect(agent?.activationCount).toBe(2);
+    expect(agent?.progress).toBeNull();
+    expect(agent?.result).toBeNull();
+    expect(agent?.status).toBe("running");
   });
 
   it("idle is nonterminal: an idle agent resumes without losing identity", () => {
