@@ -40,9 +40,9 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   // Live rows resolve their active state before using this settled-row label.
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
-  if (entry.command) return entry.command;
   const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
   const displayHeading = `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+  if (entry.command) return `${displayHeading} - ${entry.command}`;
   if (entry.searchQuery) {
     return `${displayHeading} - ${entry.searchQuery}`;
   }

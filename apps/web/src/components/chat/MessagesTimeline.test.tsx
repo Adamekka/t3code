@@ -1101,6 +1101,32 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("/workspace/SKILL.md");
   });
 
+  it("shows the Bash heading with its command", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-bash",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-bash",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "bash",
+              toolTitle: "Bash",
+              tone: "tool",
+              itemType: "command_execution",
+              command: "pwd && git log --oneline -3",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Bash - pwd &amp;&amp; git log --oneline -3");
+  });
+
   it("formats TodoWrite as a concise expandable todo row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
