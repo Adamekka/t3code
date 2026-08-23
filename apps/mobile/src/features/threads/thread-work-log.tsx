@@ -4,6 +4,12 @@ import { MaskedView } from "@expo/ui/community/masked-view";
 import { useIsFocused } from "@react-navigation/native";
 import { memo, useEffect, useId, useMemo, useState, type ComponentProps } from "react";
 import {
+  Markdown,
+  type CustomRenderers,
+  type NodeStyleOverrides,
+  type PartialMarkdownTheme,
+} from "react-native-nitro-markdown";
+import {
   AccessibilityInfo,
   AppState,
   type ColorValue,
@@ -359,6 +365,11 @@ export function ThreadWorkLog(props: {
   readonly copiedRowId: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly iconSubtleColor: import("react-native").ColorValue;
+  readonly markdownStyle: {
+    readonly theme: PartialMarkdownTheme;
+    readonly styles: NodeStyleOverrides;
+    readonly renderers: CustomRenderers;
+  };
   readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string) => void;
@@ -501,6 +512,24 @@ export function ThreadWorkLog(props: {
                   layout={WORK_LOG_LAYOUT_TRANSITION}
                 >
                   <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
+                </Animated.View>
+              ) : fullDetail && row.skillDetailIsMarkdown ? (
+                <Animated.View
+                  entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
+                  exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
+                  layout={WORK_LOG_LAYOUT_TRANSITION}
+                  className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]"
+                >
+                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator className="max-h-60">
+                    <Markdown
+                      options={{ gfm: true }}
+                      renderers={props.markdownStyle.renderers}
+                      styles={props.markdownStyle.styles}
+                      theme={props.markdownStyle.theme}
+                    >
+                      {fullDetail}
+                    </Markdown>
+                  </ScrollView>
                 </Animated.View>
               ) : fullDetail ? (
                 <Animated.View
