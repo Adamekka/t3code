@@ -274,6 +274,98 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("retains OpenCode's edited path and unified patch", () => {
+    const patch = [
+      "Index: /workspace/src/index.ts",
+      "===================================================================",
+      "--- /workspace/src/index.ts",
+      "+++ /workspace/src/index.ts",
+      "@@ -1,1 +1,1 @@",
+      "-export const value = 1;",
+      "+export const value = 2;",
+      "",
+    ].join("\n");
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "completed",
+        detail: "Edit applied successfully.",
+        data: {
+          tool: "edit",
+          state: {
+            status: "completed",
+            input: {
+              filePath: "/workspace/src/index.ts",
+              oldString: "export const value = 1;",
+              newString: "export const value = 2;",
+            },
+            output: "Edit applied successfully.",
+            metadata: { diff: patch },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBeUndefined();
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      files: [{ path: "/workspace/src/index.ts" }],
+      edit: { path: "/workspace/src/index.ts", patch },
+    });
+  });
+
+  it("preserves failed OpenCode edit details", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "failed",
+        detail: "The old text was not found.",
+        data: {
+          tool: "edit",
+          state: {
+            status: "error",
+            input: { filePath: "/workspace/src/index.ts" },
+            error: "The old text was not found.",
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "The old text was not found.",
+    );
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      files: [{ path: "/workspace/src/index.ts" }],
+    });
+  });
+
+  it("uses OpenCode's filediff when top-level Edit metadata is incomplete", () => {
+    const patch =
+      "--- /workspace/src/index.ts\n+++ /workspace/src/index.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "completed",
+        detail: "Edit applied successfully.",
+        data: {
+          tool: "edit",
+          state: {
+            status: "completed",
+            input: {},
+            output: "Edit applied successfully.",
+            metadata: {
+              filediff: { file: "/workspace/src/index.ts", patch },
+            },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      files: [{ path: "/workspace/src/index.ts" }],
+      edit: { path: "/workspace/src/index.ts", patch },
+    });
+  });
+
   it.each([
     {
       name: "failed",
