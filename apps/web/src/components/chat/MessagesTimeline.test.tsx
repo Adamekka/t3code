@@ -347,6 +347,45 @@ describe("MessagesTimeline", () => {
     expect(fadedMarkup).toContain("topbar-scroll-fade");
   });
 
+  it("lets timeline rows fill the available chat width", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[buildUserTimelineEntry("Hello")]} />,
+    );
+    const timelineRootClassName = markup.match(
+      /<div class="([^"]*)" data-timeline-root="true">/,
+    )?.[1];
+
+    expect(timelineRootClassName?.split(" ")).toEqual(
+      expect.arrayContaining(["w-full", "min-w-0", "overflow-x-clip"]),
+    );
+    expect(timelineRootClassName).not.toContain("max-w-3xl");
+  });
+
+  it("reserves symmetric interaction gutters when prompt history is available", () => {
+    const firstEntry = buildUserTimelineEntry("First prompt");
+    const secondEntry = {
+      ...buildUserTimelineEntry("Second prompt"),
+      id: "entry-2",
+      message: {
+        ...buildUserTimelineEntry("Second prompt").message,
+        id: MessageId.make("message-2"),
+      },
+    };
+    const singlePromptMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[firstEntry]} />,
+    );
+    const promptHistoryMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[firstEntry, secondEntry]} />,
+    );
+
+    expect(singlePromptMarkup).not.toContain("timeline-minimap");
+    expect(singlePromptMarkup).not.toContain("[@media(pointer:fine)]:px-16!");
+    expect(promptHistoryMarkup).toContain("[@media(pointer:fine)]:px-16!");
+    expect(promptHistoryMarkup).toContain("group-hover/rail:bg-muted/35");
+    expect(promptHistoryMarkup).toContain("group-focus-visible/rail:bg-muted/35");
+    expect(promptHistoryMarkup).toContain("group-focus-visible/rail:ring-2");
+  });
+
   it("keeps assistant changed-files headers sticky below the thread header", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
@@ -407,9 +446,7 @@ describe("MessagesTimeline", () => {
   it("treats only the strict list end as the live edge", async () => {
     const {
       resolveTimelineIsAtEnd,
-      resolveTimelineMinimapHasPersistentGutter,
       resolveTimelineMinimapHeightStyle,
-      resolveTimelineMinimapHitStripWidth,
       resolveTimelineMinimapIndexFromPointer,
       resolveTimelineMinimapInteractiveWidth,
       resolveTimelineMinimapTopPercent,
@@ -464,23 +501,6 @@ describe("MessagesTimeline", () => {
         pointerY: 999,
       }),
     ).toBe(100);
-    expect(resolveTimelineMinimapHasPersistentGutter(832)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(863)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(864)).toBe(true);
-
-    // No usable gutter (zoomed in / narrow pane): the strip must go inert
-    // instead of overlaying the centered content column.
-    expect(resolveTimelineMinimapHitStripWidth(768)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(792)).toBe(0);
-    // Partial gutter: strip shrinks to what fits between the viewport edge
-    // and the content column.
-    expect(resolveTimelineMinimapHitStripWidth(820)).toBe(14);
-    // Full gutter: unchanged 40px-wide strip.
-    expect(resolveTimelineMinimapHitStripWidth(872)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(1400)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(0)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(Number.NaN)).toBe(0);
-
     // The collapsed target stays narrow, but an open preview keeps its full
     // 20rem width plus the 2rem offset from the minimap rail interactive.
     expect(resolveTimelineMinimapInteractiveWidth(0, false)).toBe(0);
