@@ -1367,15 +1367,23 @@ export function deriveThreadFeedPresentation(
   expandedTurnIds: ReadonlySet<TurnId>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
+  options: {
+    readonly collapsedTurnIds?: ReadonlySet<TurnId>;
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly expandToolCallsByDefault?: boolean;
+  } = {},
 ): ThreadFeedEntry[] {
   const sourceFeed = feed.filter(
     (entry) =>
       entry.type !== "turn-fold" && entry.type !== "work-toggle" && entry.type !== "working",
   );
+  const turnIsExpanded = (turnId: TurnId) =>
+    expandedTurnIds.has(turnId) ||
+    (options.expandToolCallsByDefault === true && !options.collapsedTurnIds?.has(turnId));
   const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn);
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
-    if (!expandedTurnIds.has(fold.turnId)) {
+    if (!turnIsExpanded(fold.turnId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -1392,11 +1400,11 @@ export function deriveThreadFeedPresentation(
         createdAt: fold.createdAt,
         turnId: fold.turnId,
         label: fold.label,
-        expanded: expandedTurnIds.has(fold.turnId),
+        expanded: turnIsExpanded(fold.turnId),
       });
     }
     if (!collapsedEntryIds.has(entry.id)) {
-      appendPresentedFeedEntry(result, entry, expandedWorkGroupIds);
+      appendPresentedFeedEntry(result, entry, expandedWorkGroupIds, options);
     }
   }
   if (activeWorkStartedAt !== null) {
@@ -1413,6 +1421,10 @@ function appendPresentedFeedEntry(
   result: ThreadFeedEntry[],
   entry: Exclude<ThreadFeedEntry, { readonly type: "turn-fold" | "work-toggle" | "working" }>,
   expandedWorkGroupIds: ReadonlySet<string>,
+  options: {
+    readonly collapsedWorkGroupIds?: ReadonlySet<string>;
+    readonly expandToolCallsByDefault?: boolean;
+  },
 ): void {
   if (entry.type !== "activity-group") {
     result.push(entry);
@@ -1434,7 +1446,9 @@ function appendPresentedFeedEntry(
   }
 
   const groupId = entry.id;
-  const expanded = expandedWorkGroupIds.has(groupId);
+  const expanded =
+    expandedWorkGroupIds.has(groupId) ||
+    (options.expandToolCallsByDefault === true && !options.collapsedWorkGroupIds?.has(groupId));
   const hiddenCount = activities.length - MAX_VISIBLE_WORK_LOG_ENTRIES;
   const visibleActivities = expanded ? activities : activities.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
 

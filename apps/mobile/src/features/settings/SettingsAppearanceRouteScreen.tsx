@@ -8,10 +8,15 @@ import { CodeAppearanceSection } from "./appearance/sections/CodeAppearanceSecti
 import { TerminalAppearanceSection } from "./appearance/sections/TerminalAppearanceSection";
 import { TextAppearanceSection } from "./appearance/sections/TextAppearanceSection";
 import { ThemeAppearanceSection } from "./appearance/sections/ThemeAppearanceSection";
+import { SettingsSection } from "./components/SettingsSection";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { useAppearancePreferences } from "./appearance/AppearancePreferencesProvider";
 
 export function SettingsAppearanceRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { expandToolCallsByDefault, isReady, setExpandToolCallsByDefault } =
+    useAppearancePreferences();
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
@@ -34,6 +39,16 @@ export function SettingsAppearanceRouteScreen() {
         <TextAppearanceSection />
         <TerminalAppearanceSection />
         <CodeAppearanceSection />
+        <SettingsSection card title="Chat">
+          <SettingsSwitchRow
+            disabled={!isReady}
+            icon="chevron.down"
+            label="Expand tool calls"
+            subtitle="Show every tool call in completed turns by default."
+            onValueChange={setExpandToolCallsByDefault}
+            value={expandToolCallsByDefault}
+          />
+        </SettingsSection>
       </ScrollView>
     </View>
   );

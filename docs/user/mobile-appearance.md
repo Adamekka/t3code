@@ -13,3 +13,7 @@ To change themes:
 
 **System** follows the device appearance automatically. Theme, text, code, and terminal appearance
 preferences are stored on the device.
+
+Turn on **Expand tool calls** to show the tool activity inside completed turns automatically. Each
+tool's command and output remain collapsed until you select that tool. This preference is stored on
+the device, separately from web and desktop.
