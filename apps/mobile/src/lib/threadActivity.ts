@@ -88,6 +88,7 @@ export interface ThreadFeedActivity {
     readonly patch: string;
   };
   readonly skillDetailIsMarkdown?: boolean;
+  readonly taskDetailIsMarkdown?: boolean;
 }
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
@@ -124,6 +125,8 @@ export interface WorkLogEntry {
   };
   skillName?: string;
   skillDetailIsMarkdown?: boolean;
+  taskDescription?: string;
+  taskDetailIsMarkdown?: boolean;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -424,6 +427,8 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const globPattern = asTrimmedString(data?.pattern);
   const skillName = data?.kind === "skill" ? asTrimmedString(data.name) : null;
   const skillDetailIsMarkdown = data?.kind === "skill" && data.detailFormat === "markdown";
+  const taskDescription = data?.kind === "task" ? asTrimmedString(data.description) : null;
+  const taskDetailIsMarkdown = data?.kind === "task" && data.detailFormat === "markdown";
   const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
   const searchQuery =
     asTrimmedString(rawInput?.query) ??
@@ -539,6 +544,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (skillDetailIsMarkdown) {
     entry.skillDetailIsMarkdown = true;
+  }
+  if (taskDescription) {
+    entry.taskDescription = taskDescription;
+  }
+  if (taskDetailIsMarkdown) {
+    entry.taskDetailIsMarkdown = true;
   }
   if (title) {
     entry.toolTitle = title;
@@ -1910,8 +1921,10 @@ export function buildThreadFeed(
         })
         .map<RawThreadFeedEntry>((entry) => {
           const heading = workEntryHeading(entry);
-          const summary = entry.skillName ? `${heading} - ${entry.skillName}` : heading;
-          const detail = entry.skillName ? null : workEntryPreview(entry);
+          const namedToolDetail = entry.skillName ?? entry.taskDescription;
+          const summary = namedToolDetail ? `${heading} - ${namedToolDetail}` : heading;
+          const detail =
+            namedToolDetail || entry.taskDetailIsMarkdown ? null : workEntryPreview(entry);
           const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
           const getCopyText = memoizeValue(() =>
             [summary, detail, getFullDetail()]
@@ -1945,6 +1958,7 @@ export function buildThreadFeed(
                 : {}),
               ...(entry.editDiff ? { editDiff: entry.editDiff } : {}),
               ...(entry.skillDetailIsMarkdown ? { skillDetailIsMarkdown: true } : {}),
+              ...(entry.taskDetailIsMarkdown ? { taskDetailIsMarkdown: true } : {}),
             },
           };
         }),

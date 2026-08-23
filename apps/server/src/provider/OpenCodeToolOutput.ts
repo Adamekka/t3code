@@ -16,7 +16,45 @@ export interface OpenCodeGrepOutput {
   readonly content: string;
 }
 
+export interface OpenCodeTaskEnvelope {
+  readonly id: string;
+  readonly state: "running" | "completed" | "error";
+  readonly result?: string;
+  readonly error?: string;
+}
+
 export const OPEN_CODE_GREP_MATCH_LIMIT = 5;
+
+export function parseOpenCodeTaskEnvelope(value: unknown): OpenCodeTaskEnvelope | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const output = value.trim();
+  const opening = /^<task id="([^"\r\n]+)" state="(running|completed|error)">\r?\n/u.exec(output);
+  if (!opening || !output.endsWith("</task>")) {
+    return null;
+  }
+  const body = output.slice(opening[0].length, -"</task>".length).trim();
+  const extract = (tag: "task_result" | "task_error") => {
+    const openTag = `<${tag}>`;
+    const closeTag = `</${tag}>`;
+    const start = body.indexOf(openTag);
+    const end = body.lastIndexOf(closeTag);
+    if (start < 0 || end < start + openTag.length) {
+      return undefined;
+    }
+    return body.slice(start + openTag.length, end).trim();
+  };
+  const state = opening[2] as OpenCodeTaskEnvelope["state"];
+  const result = extract("task_result");
+  const error = extract("task_error");
+  return {
+    id: opening[1]!,
+    state,
+    ...(result !== undefined ? { result } : {}),
+    ...(error !== undefined ? { error } : {}),
+  };
+}
 
 export function parseOpenCodeReadOutput(output: string): OpenCodeReadOutput | null {
   const match =
