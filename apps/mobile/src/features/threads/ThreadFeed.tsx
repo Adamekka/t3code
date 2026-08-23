@@ -1841,6 +1841,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const previousLatestTurnRef = useRef(props.latestTurn);
   const userScrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+  const { expandToolCallsByDefault } = useAppearancePreferences();
   const [viewportWidth, setViewportWidth] = useState(() =>
     props.layoutVariant === "split" ? 0 : windowWidth,
   );
@@ -1879,13 +1880,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly expandedWorkGroups: Record<string, boolean>;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedTurnIds: ReadonlySet<TurnId>;
+    readonly collapsedTurnIds: ReadonlySet<TurnId>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
+    collapsedTurnIds: new Set(),
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds } = interactionState;
+  const { collapsedTurnIds, copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds } =
+    interactionState;
   const [expandedFile, setExpandedFile] = useState<FilePreviewSource | null>(null);
   const [expandedVideo, setExpandedVideo] = useState<VideoPreviewSource | null>(null);
   useEffect(() => {
@@ -2165,14 +2169,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
   }, [clearUserScrollSettle, props.submittedMessageId, transitionEndFollow]);
 
-  const expandedWorkGroupIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const [groupId, expanded] of Object.entries(expandedWorkGroups)) {
-      if (expanded) {
-        ids.add(groupId);
-      }
+  const workGroupExpansionIds = useMemo(() => {
+    const expanded = new Set<string>();
+    const collapsed = new Set<string>();
+    for (const [groupId, isExpanded] of Object.entries(expandedWorkGroups)) {
+      if (isExpanded) expanded.add(groupId);
+      else collapsed.add(groupId);
     }
-    return ids;
+    return { expanded, collapsed };
   }, [expandedWorkGroups]);
   const presentedFeed = useMemo(
     () =>
@@ -2180,12 +2184,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         props.feed,
         props.latestTurn,
         expandedTurnIds,
-        expandedWorkGroupIds,
+        workGroupExpansionIds.expanded,
         props.activeWorkStartedAt,
+        {
+          collapsedTurnIds,
+          collapsedWorkGroupIds: workGroupExpansionIds.collapsed,
+          expandToolCallsByDefault,
+        },
       ),
     [
       expandedTurnIds,
-      expandedWorkGroupIds,
+      collapsedTurnIds,
+      expandToolCallsByDefault,
+      workGroupExpansionIds,
       props.activeWorkStartedAt,
       props.feed,
       props.latestTurn,
@@ -2267,6 +2278,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         setInteractionState((current) => ({
           ...current,
           expandedTurnIds: new Set(current.expandedTurnIds).add(interruptedTurnId),
+          collapsedTurnIds: new Set(
+            [...current.collapsedTurnIds].filter((turnId) => turnId !== interruptedTurnId),
+          ),
         }));
       }
       return;
@@ -2275,9 +2289,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       if (!current.expandedTurnIds.has(previous.turnId)) {
         return current;
       }
-      const next = new Set(current.expandedTurnIds);
-      next.delete(previous.turnId);
-      return { ...current, expandedTurnIds: next };
+      const nextExpanded = new Set(current.expandedTurnIds);
+      nextExpanded.delete(previous.turnId);
+      return {
+        ...current,
+        expandedTurnIds: nextExpanded,
+      };
     });
   }, [props.latestTurn]);
 
@@ -2370,11 +2387,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         ...current,
         expandedWorkGroups: {
           ...current.expandedWorkGroups,
-          [groupId]: !(current.expandedWorkGroups[groupId] ?? false),
+          [groupId]: !(current.expandedWorkGroups[groupId] ?? expandToolCallsByDefault),
         },
       }));
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [expandToolCallsByDefault, suspendEndScrollMaintenanceForDisclosure],
   );
 
   const onToggleWorkRow = useCallback(
@@ -2395,16 +2412,25 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     (turnId: TurnId) => {
       suspendEndScrollMaintenanceForDisclosure(`turn-fold:${turnId}`);
       setInteractionState((current) => {
-        const next = new Set(current.expandedTurnIds);
-        if (next.has(turnId)) {
-          next.delete(turnId);
+        const nextExpanded = new Set(current.expandedTurnIds);
+        const nextCollapsed = new Set(current.collapsedTurnIds);
+        const isExpanded =
+          nextExpanded.has(turnId) || (expandToolCallsByDefault && !nextCollapsed.has(turnId));
+        if (isExpanded) {
+          nextExpanded.delete(turnId);
+          nextCollapsed.add(turnId);
         } else {
-          next.add(turnId);
+          nextExpanded.add(turnId);
+          nextCollapsed.delete(turnId);
         }
-        return { ...current, expandedTurnIds: next };
+        return {
+          ...current,
+          expandedTurnIds: nextExpanded,
+          collapsedTurnIds: nextCollapsed,
+        };
       });
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [expandToolCallsByDefault, suspendEndScrollMaintenanceForDisclosure],
   );
 
   const onPressPreview = useCallback((source: FilePreviewSource) => {
