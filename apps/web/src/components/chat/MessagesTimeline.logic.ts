@@ -37,9 +37,9 @@ export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
-  if (entry.command) return entry.command;
   const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
   const displayHeading = `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+  if (entry.command) return `${displayHeading} - ${entry.command}`;
   if (entry.searchQuery) {
     return `${displayHeading} - ${entry.searchQuery}`;
   }
