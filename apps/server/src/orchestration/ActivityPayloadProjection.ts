@@ -380,6 +380,7 @@ export function projectActivityPayload(
     data.kind === "glob" ||
     activity.summary.trim().toLowerCase() === "glob";
   const toolName = asTrimmedString(data.tool) ?? asTrimmedString(data.toolName);
+  const isOpenCodeWriteActivity = toolName?.toLowerCase() === "write";
   const isOpenCodeGrepActivity = toolName?.toLowerCase() === "grep";
   const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
   const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
@@ -390,6 +391,14 @@ export function projectActivityPayload(
   const readInputPath =
     isReadActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const readPath = readOutput?.path ?? readInputPath;
+  const writeInputPath =
+    isOpenCodeWriteActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
+  const writeContent =
+    isOpenCodeWriteActivity &&
+    statusProjectedPayload.status === "completed" &&
+    typeof input?.content === "string"
+      ? input.content
+      : null;
   const grepOutput =
     isOpenCodeGrepActivity && typeof state?.output === "string"
       ? parseOpenCodeGrepOutput(state.output)
@@ -447,6 +456,9 @@ export function projectActivityPayload(
   const seenChangedFiles = new Set<string>();
   if (readPath) {
     pushChangedFile(changedFiles, seenChangedFiles, readPath);
+  }
+  if (writeInputPath) {
+    pushChangedFile(changedFiles, seenChangedFiles, writeInputPath);
   }
   collectChangedFiles(data, changedFiles, seenChangedFiles, 0);
   if (changedFiles.length > 0) {
@@ -550,6 +562,20 @@ export function projectActivityPayload(
     }
   }
   if (isTodoActivity && payload.status !== "failed") {
+    delete projectedPayload.detail;
+  }
+  if (writeContent !== null) {
+    if (writeContent.length > 0) {
+      projectedPayload.detail = writeContent;
+    } else {
+      delete projectedPayload.detail;
+    }
+  } else if (
+    isOpenCodeWriteActivity &&
+    statusProjectedPayload.status === "completed" &&
+    payload.detail === "Wrote file successfully." &&
+    changedFiles.length > 0
+  ) {
     delete projectedPayload.detail;
   }
 
