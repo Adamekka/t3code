@@ -520,6 +520,47 @@ describe("buildThreadFeed", () => {
     expect(group.activities[0]?.getFullDetail()).toBe("export const value = 1;");
   });
 
+  it("shows Edit paths while retaining the structured unified patch", () => {
+    const patch =
+      "--- /workspace/src/index.ts\n+++ /workspace/src/index.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const thread = makeThread({
+      id: ThreadId.make("thread-edit"),
+      projectId: ProjectId.make("project-1"),
+      title: "Edit file",
+      activities: [
+        makeActivity({
+          id: EventId.make("edit-completed"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "edit",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          payload: {
+            itemType: "file_change",
+            status: "completed",
+            data: {
+              files: [{ path: "/workspace/src/index.ts" }],
+              edit: { path: "/workspace/src/index.ts", patch },
+            },
+          },
+        }),
+      ],
+    });
+
+    const group = buildThreadFeed(thread)[0];
+    expect(group).toMatchObject({ type: "activity-group" });
+    if (!group || group.type !== "activity-group") {
+      return;
+    }
+
+    expect(group.activities[0]).toMatchObject({
+      summary: "Edit",
+      detail: "/workspace/src/index.ts",
+      icon: "edit",
+      editDiff: { path: "/workspace/src/index.ts", patch },
+    });
+    expect(group.activities[0]?.getFullDetail()).toBe(patch);
+  });
+
   it("shows Glob patterns while expanding matched paths", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-glob"),
