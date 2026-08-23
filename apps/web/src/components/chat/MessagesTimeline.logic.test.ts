@@ -1476,7 +1476,9 @@ describe("deriveMessagesTimelineRows", () => {
     if (completedRow?.kind !== "work") {
       throw new Error("Expected the completed command to be a direct work row");
     }
-    expect(workEntryDisplayLabel(completedRow.groupedEntries[0]!, undefined)).toBe("rg toolCall");
+    expect(workEntryDisplayLabel(completedRow.groupedEntries[0]!, undefined)).toBe(
+      "Ran rg - rg toolCall",
+    );
   });
 
   it("renders one tool call directly after collapsing its lifecycle updates", () => {
@@ -1532,7 +1534,9 @@ describe("deriveMessagesTimelineRows", () => {
     if (completedRow?.kind !== "work") {
       throw new Error("Expected the completed command to be a direct work row");
     }
-    expect(workEntryDisplayLabel(completedRow.groupedEntries[0]!, undefined)).toBe("rg toolCall");
+    expect(workEntryDisplayLabel(completedRow.groupedEntries[0]!, undefined)).toBe(
+      "Ran rg - rg toolCall",
+    );
     expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
   });
 
