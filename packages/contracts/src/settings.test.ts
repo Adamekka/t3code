@@ -112,6 +112,18 @@ describe("ClientSettings browser recording frame rate", () => {
   });
 });
 
+describe("ClientSettings tool call expansion", () => {
+  it("defaults tool call groups to collapsed", () => {
+    expect(decodeClientSettings({}).expandToolCallsByDefault).toBe(false);
+  });
+
+  it("accepts an explicit expansion preference", () => {
+    expect(
+      decodeClientSettingsPatch({ expandToolCallsByDefault: true }).expandToolCallsByDefault,
+    ).toBe(true);
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);
