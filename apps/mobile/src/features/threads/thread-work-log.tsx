@@ -2,6 +2,12 @@ import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
 import { memo, useMemo } from "react";
 import {
+  Markdown,
+  type CustomRenderers,
+  type NodeStyleOverrides,
+  type PartialMarkdownTheme,
+} from "react-native-nitro-markdown";
+import {
   LayoutAnimation,
   Pressable,
   ScrollView,
@@ -213,6 +219,11 @@ export function ThreadWorkLog(props: {
   readonly copiedRowId: string | null;
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly iconSubtleColor: import("react-native").ColorValue;
+  readonly markdownStyle: {
+    readonly theme: PartialMarkdownTheme;
+    readonly styles: NodeStyleOverrides;
+    readonly renderers: CustomRenderers;
+  };
   readonly workspaceRoot?: string | null;
   readonly onCopyRow: (rowId: string, value: string) => void;
   readonly onToggleRow: (rowId: string) => void;
@@ -359,6 +370,19 @@ export function ThreadWorkLog(props: {
 
               {expanded && row.editDiff ? (
                 <EditToolDiff activityId={row.id} patch={row.editDiff.patch} />
+              ) : fullDetail && row.skillDetailIsMarkdown ? (
+                <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
+                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator className="max-h-60">
+                    <Markdown
+                      options={{ gfm: true }}
+                      renderers={props.markdownStyle.renderers}
+                      styles={props.markdownStyle.styles}
+                      theme={props.markdownStyle.theme}
+                    >
+                      {fullDetail}
+                    </Markdown>
+                  </ScrollView>
+                </View>
               ) : fullDetail ? (
                 <View className="ml-7 border-l border-adaptive-neutral-300-a60-white-a12 pb-1 pl-3 pt-0.5">
                   <ScrollView

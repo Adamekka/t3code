@@ -1152,6 +1152,35 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("+new");
   });
 
+  it("shows Skill names while keeping Markdown out of the compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-skill",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-skill",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "skill",
+              tone: "tool",
+              itemType: "dynamic_tool_call",
+              detail: "# Unslop\n\nEdit text to remove AI patterns.",
+              skillName: "unslop",
+              skillDetailIsMarkdown: true,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Skill - unslop"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Edit text to remove AI patterns.");
+  });
+
   it("shows Glob patterns without matched paths in the compact row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
