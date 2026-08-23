@@ -122,7 +122,7 @@ describe("work entry labels", () => {
     const commandEntry = { ...entry, command: "vp test run", detail: "All tests passed" };
     expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
     expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran vp");
-    expect(workEntryDisplayLabel(commandEntry, undefined)).toBe("vp test run");
+    expect(workEntryDisplayLabel(commandEntry, undefined)).toBe("Tool call - vp test run");
   });
 
   it("summarizes the program inside a shell wrapper while preserving the expanded command", () => {
@@ -130,7 +130,7 @@ describe("work entry labels", () => {
     const commandEntry = { ...entry, command };
     expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
     expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran vp");
-    expect(workEntryDisplayLabel(commandEntry, undefined)).toBe(command);
+    expect(workEntryDisplayLabel(commandEntry, undefined)).toBe(`Tool call - ${command}`);
   });
 
   it.each([
