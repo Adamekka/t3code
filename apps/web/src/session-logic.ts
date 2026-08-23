@@ -99,6 +99,8 @@ export interface WorkLogEntry {
   editDiff?: WorkLogEditDiff;
   skillName?: string;
   skillDetailIsMarkdown?: boolean;
+  taskDescription?: string;
+  taskDetailIsMarkdown?: boolean;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
@@ -1055,6 +1057,8 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const globPattern = asTrimmedString(data?.pattern);
   const skillName = data?.kind === "skill" ? asTrimmedString(data.name) : null;
   const skillDetailIsMarkdown = data?.kind === "skill" && data.detailFormat === "markdown";
+  const taskDescription = data?.kind === "task" ? asTrimmedString(data.description) : null;
+  const taskDetailIsMarkdown = data?.kind === "task" && data.detailFormat === "markdown";
   const rawInput = data?.kind === "search" ? asRecord(data.rawInput) : null;
   const searchQuery =
     asTrimmedString(rawInput?.query) ??
@@ -1162,6 +1166,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (skillDetailIsMarkdown) {
     entry.skillDetailIsMarkdown = true;
+  }
+  if (taskDescription) {
+    entry.taskDescription = taskDescription;
+  }
+  if (taskDetailIsMarkdown) {
+    entry.taskDetailIsMarkdown = true;
   }
   if (title) {
     entry.toolTitle = title;
