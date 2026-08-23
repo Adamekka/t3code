@@ -763,7 +763,11 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
   } else {
     appendUniqueBlock(entry.detail);
   }
-  if (!workEntryIsRead(entry) && (entry.changedFiles?.length ?? 0) > 0) {
+  if (
+    !workEntryIsRead(entry) &&
+    !workEntryIsWrite(entry) &&
+    (entry.changedFiles?.length ?? 0) > 0
+  ) {
     appendUniqueBlock(entry.changedFiles!.join("\n"));
   }
 
@@ -795,6 +799,12 @@ function workEntryIsRead(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): 
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "read";
 }
 
+function workEntryIsWrite(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
+  return (
+    normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "write"
+  );
+}
+
 function workEntryIsGlob(workEntry: Pick<WorkLogEntry, "label" | "toolTitle">): boolean {
   return normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase() === "glob";
 }
@@ -808,7 +818,7 @@ function workEntryPreview(
   if (workEntry.command) return workEntry.command;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
-  if (workEntryIsRead(workEntry)) {
+  if (workEntryIsRead(workEntry) || workEntryIsWrite(workEntry)) {
     return workEntry.changedFiles?.[0] ?? null;
   }
   if (workEntry.detail) return workEntry.detail;
