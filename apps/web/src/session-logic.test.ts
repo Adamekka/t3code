@@ -1750,6 +1750,32 @@ describe("deriveWorkLogEntries", () => {
     });
   });
 
+  it("extracts normalized OpenCode Task presentation data", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "task-tool",
+        kind: "tool.completed",
+        summary: "task",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          detail: "## Result\n\nFound it.",
+          data: {
+            kind: "task",
+            description: "Trace task flow",
+            detailFormat: "markdown",
+          },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      detail: "## Result\n\nFound it.",
+      taskDescription: "Trace task flow",
+      taskDetailIsMarkdown: true,
+    });
+  });
+
   it("drops duplicated tool detail when it only repeats the title", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

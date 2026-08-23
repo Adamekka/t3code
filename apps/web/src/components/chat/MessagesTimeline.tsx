@@ -2250,6 +2250,12 @@ function workEntryIsSkill(workEntry: Pick<TimelineWorkEntry, "skillName">): bool
   return workEntry.skillName !== undefined;
 }
 
+function workEntryIsOpenCodeTask(
+  workEntry: Pick<TimelineWorkEntry, "taskDescription" | "taskDetailIsMarkdown">,
+): boolean {
+  return workEntry.taskDescription !== undefined || workEntry.taskDetailIsMarkdown === true;
+}
+
 function workEntryIsTodo(workEntry: Pick<TimelineWorkEntry, "todoItems">): boolean {
   return workEntry.todoItems !== undefined;
 }
@@ -2264,6 +2270,7 @@ function workEntryPreview(
     | "globPattern"
     | "searchQuery"
     | "skillName"
+    | "taskDescription"
     | "todoItems"
     | "changedFiles"
   >,
@@ -2271,6 +2278,7 @@ function workEntryPreview(
 ) {
   if (workEntry.command) return workEntry.command;
   if (workEntryIsSkill(workEntry)) return workEntry.skillName ?? null;
+  if (workEntryIsOpenCodeTask(workEntry)) return workEntry.taskDescription ?? null;
   if (workEntryIsGlob(workEntry)) return workEntry.globPattern ?? null;
   if (workEntry.searchQuery) return workEntry.searchQuery;
   if (workEntry.todoItems !== undefined) {
@@ -2439,6 +2447,7 @@ function workEntryDisplayText(
     workEntryIsEdit(workEntry) ||
     workEntryIsGlob(workEntry) ||
     workEntryIsSkill(workEntry) ||
+    workEntryIsOpenCodeTask(workEntry) ||
     workEntry.command !== undefined ||
     workEntry.searchQuery !== undefined;
   return keepsHeading && preview ? `${heading} - ${preview}` : (preview ?? heading);
@@ -2594,8 +2603,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     viewedImage !== null || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const canExpand = editRenderablePatch !== null || hasStandardExpandedContent;
   const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
+    showFailedIndicator && (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
@@ -2710,8 +2718,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 <TodoChecklist items={workEntry.todoItems} />
               ) : null}
               {expandedBody ? (
-                workEntry.skillDetailIsMarkdown ? (
-                  <SkillToolMarkdown text={expandedBody} />
+                workEntry.skillDetailIsMarkdown || workEntry.taskDetailIsMarkdown ? (
+                  <ToolDetailMarkdown text={expandedBody} />
                 ) : (
                   <pre
                     className={cn(
@@ -2731,7 +2739,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   );
 });
 
-const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+const ToolDetailMarkdown = memo(function ToolDetailMarkdown(props: { text: string }) {
   const ctx = use(TimelineRowCtx);
   return (
     <div className="max-h-64 overflow-auto pe-2 text-sm">
