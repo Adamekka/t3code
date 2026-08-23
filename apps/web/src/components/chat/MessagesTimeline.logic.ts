@@ -46,7 +46,11 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
     const progress = entry.todoItems.length === 0 ? "No todos" : `${completed}/${entry.todoItems.length} completed`;
     return `Update todos - ${progress}`;
   }
-  if (heading.toLowerCase() === "read" || heading.toLowerCase() === "write") {
+  if (
+    heading.toLowerCase() === "read" ||
+    heading.toLowerCase() === "write" ||
+    heading.toLowerCase() === "edit"
+  ) {
     const [firstPath] = entry.changedFiles ?? [];
     return firstPath
       ? `${displayHeading} - ${formatWorkspaceRelativePath(firstPath, workspaceRoot)}`
