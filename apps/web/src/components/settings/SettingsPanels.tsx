@@ -531,6 +531,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Auto-settle merged threads"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
+      ...(settings.expandToolCallsByDefault !== DEFAULT_UNIFIED_SETTINGS.expandToolCallsByDefault
+        ? ["Expand tool calls"]
+        : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
@@ -1290,6 +1293,34 @@ export function AppearanceSettingsPanel() {
       </SettingsSection>
 
       <TypographySection />
+      <SettingsSection title="Chat">
+        <SettingsRow
+          {...searchableSetting("expand-tool-calls")}
+          description="Show every tool call in completed turns by default. Tool details stay collapsed until opened."
+          resetAction={
+            settings.expandToolCallsByDefault !==
+            DEFAULT_UNIFIED_SETTINGS.expandToolCallsByDefault ? (
+              <SettingResetButton
+                label="tool call expansion"
+                onClick={() =>
+                  updateSettings({
+                    expandToolCallsByDefault: DEFAULT_UNIFIED_SETTINGS.expandToolCallsByDefault,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.expandToolCallsByDefault}
+              onCheckedChange={(checked) =>
+                updateSettings({ expandToolCallsByDefault: Boolean(checked) })
+              }
+              aria-label="Expand tool calls by default"
+            />
+          }
+        />
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }

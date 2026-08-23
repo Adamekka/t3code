@@ -32,6 +32,7 @@ const clientSettings: ClientSettings = {
   diffIgnoreWhitespace: true,
   diffLayout: "stacked",
   environmentIdentificationMode: "artwork",
+  expandToolCallsByDefault: true,
   favorites: [],
   fontFamilyCode: "",
   fontFamilyComposer: "",
