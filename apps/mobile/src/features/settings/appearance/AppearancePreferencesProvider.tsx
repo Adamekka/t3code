@@ -34,6 +34,7 @@ interface AppearancePreferencesContextValue {
   readonly themeIds: MobileThemeIds;
   readonly themeMode: MobileThemeMode;
   readonly themeAppearance: MobileThemeAppearance;
+  readonly expandToolCallsByDefault: boolean;
   readonly isReady: boolean;
   readonly setThemeIdForAppearance: (
     appearance: MobileThemeAppearance,
@@ -47,6 +48,7 @@ interface AppearancePreferencesContextValue {
   /** Pass null to clear the override and follow the base font size. */
   readonly setCodeFontSize: (value: number | null) => void;
   readonly setCodeWordBreak: (value: boolean) => void;
+  readonly setExpandToolCallsByDefault: (value: boolean) => void;
 }
 
 const AppearancePreferencesContext = createContext<AppearancePreferencesContextValue | null>(null);
@@ -94,6 +96,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   );
   const themeId = themeIds[themeAppearance];
   const isReady = AsyncResult.isSuccess(preferencesResult) && !preferencesResult.waiting;
+  const expandToolCallsByDefault = storedPreferences?.expandToolCallsByDefault === true;
 
   useLayoutEffect(() => {
     applyAppearanceVariables(preferences.baseFontSize, themeIds);
@@ -159,6 +162,13 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [updatePreferences],
   );
 
+  const setExpandToolCallsByDefault = useCallback(
+    (value: boolean) => {
+      updatePreferences({ expandToolCallsByDefault: value });
+    },
+    [updatePreferences],
+  );
+
   const value = useMemo(
     (): AppearancePreferencesContextValue => ({
       appearance: resolveAppearance(preferences),
@@ -166,6 +176,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      expandToolCallsByDefault,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,
@@ -174,6 +185,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      setExpandToolCallsByDefault,
     }),
     [
       preferences,
@@ -181,6 +193,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      expandToolCallsByDefault,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,
@@ -189,6 +202,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setTerminalFontSize,
       setCodeFontSize,
       setCodeWordBreak,
+      setExpandToolCallsByDefault,
     ],
   );
 
