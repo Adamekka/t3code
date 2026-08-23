@@ -196,6 +196,12 @@ describe("mobile connection storage", () => {
     });
   });
 
+  it("loads the tool call expansion preference", async () => {
+    mocks.setPreferencesJson(JSON.stringify({ expandToolCallsByDefault: true }), 10);
+
+    await expect(loadPreferences()).resolves.toEqual({ expandToolCallsByDefault: true });
+  });
+
   it("falls back to secure storage when SQLite cannot save preferences", async () => {
     mocks.setDatabaseFailures(true, true);
     await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual({ baseFontSize: 19 });
