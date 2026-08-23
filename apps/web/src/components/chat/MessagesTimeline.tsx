@@ -2918,19 +2918,37 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                 <TodoChecklist items={workEntry.todoItems} />
               ) : null}
               {expandedBody ? (
-                <pre
-                  className={cn(
-                    workEntry.todoItems !== undefined && "mt-1",
-                    toolCallExpandedBodyClassName,
-                  )}
-                >
-                  {expandedBody}
-                </pre>
+                workEntry.skillDetailIsMarkdown ? (
+                  <SkillToolMarkdown text={expandedBody} />
+                ) : (
+                  <pre
+                    className={cn(
+                      workEntry.todoItems !== undefined && "mt-1",
+                      toolCallExpandedBodyClassName,
+                    )}
+                  >
+                    {expandedBody}
+                  </pre>
+                )
               ) : null}
             </div>
           ) : null}
         </>
       ) : null}
+    </div>
+  );
+});
+
+const SkillToolMarkdown = memo(function SkillToolMarkdown(props: { text: string }) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <div className="max-h-64 overflow-auto pe-2 text-sm">
+      <ChatMarkdown
+        text={props.text}
+        cwd={ctx.markdownCwd}
+        threadRef={ctx.threadRef ?? undefined}
+        skills={ctx.skills}
+      />
     </div>
   );
 });
