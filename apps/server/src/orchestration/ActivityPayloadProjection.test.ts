@@ -610,6 +610,116 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("projects a completed OpenCode Skill as a name and authored Markdown", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        detail: "provider detail is replaced by normalized content",
+        data: {
+          tool: "skill",
+          state: {
+            status: "completed",
+            input: { name: "unslop" },
+            output:
+              '<skill_content name="unslop">\n# Skill: unslop\n\n# Unslop\n\nEdit text to remove AI patterns.\n\nBase directory for this skill: /skills/unslop\nRelative paths are relative to this base directory.\n<skill_files>\n</skill_files>\n</skill_content>',
+            metadata: { name: "unslop", dir: "/skills/unslop" },
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "dynamic_tool_call",
+      status: "completed",
+      detail: "# Unslop\n\nEdit text to remove AI patterns.",
+      data: {
+        kind: "skill",
+        name: "unslop",
+        detailFormat: "markdown",
+      },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("preserves failed OpenCode Skill detail while retaining its name", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        status: "failed",
+        detail: "Skill not found: missing-skill",
+        data: {
+          tool: "skill",
+          state: {
+            status: "failed",
+            input: { name: "missing-skill" },
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "dynamic_tool_call",
+      status: "failed",
+      detail: "Skill not found: missing-skill",
+      data: { kind: "skill", name: "missing-skill" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("preserves malformed completed OpenCode Skill output as plain detail", () => {
+    const detail = '<skill_content name="unslop">\n# Skill: unslop\n\nTruncated output';
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        detail,
+        data: {
+          tool: "skill",
+          state: {
+            status: "completed",
+            input: { name: "unslop" },
+            output: detail,
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "dynamic_tool_call",
+      status: "completed",
+      detail,
+      data: { kind: "skill", name: "unslop" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("does not expose the OpenCode wrapper for an empty Skill", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        detail: "provider detail",
+        data: {
+          tool: "skill",
+          state: {
+            status: "completed",
+            input: { name: "empty" },
+            output:
+              '<skill_content name="empty">\n# Skill: empty\n\nBase directory for this skill: /skills/empty\nRelative paths are relative to this base directory.\n<skill_files>\n</skill_files>\n</skill_content>',
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "dynamic_tool_call",
+      status: "completed",
+      data: { kind: "skill", name: "empty", detailFormat: "markdown" },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
   it("projects stored OpenCode TodoWrite input without serialized JSON", () => {
     const projected = projectActivityPayload({
       ...activity({
