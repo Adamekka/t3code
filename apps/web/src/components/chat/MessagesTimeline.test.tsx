@@ -1243,7 +1243,36 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("t3code/apps/web/src/session-logic.ts");
     expect(markup).toContain("lucide-square-pen");
+    expect(markup).toContain('data-tool-call-row="true"');
+    expect(markup).toContain(
+      "border-l-2 border-l-icon-muted/50 bg-muted/25 inset-ring-1 inset-ring-border/45",
+    );
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
+  });
+
+  it("leaves non-tool work log rows unboxed", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-info",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-info",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Connected to provider",
+              tone: "info",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Connected to provider");
+    expect(markup).not.toContain('data-tool-call-row="true"');
+    expect(markup).not.toContain("bg-muted/25");
   });
 
   it("keeps mixed-success tools as separate rows", () => {
@@ -1415,6 +1444,10 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Running pnpm");
     expect(markup).toContain("live-activity-focus");
+    expect(markup).toContain('data-tool-call-row="true"');
+    expect(markup).toContain(
+      "border-l-2 border-l-icon-muted/50 bg-muted/25 text-left inset-ring-1 inset-ring-border/45",
+    );
   });
 
   it("scopes a live row failure to the tool named by the row", () => {
