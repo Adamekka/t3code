@@ -81,6 +81,7 @@ const runtimeMock = {
     inventory: {
       providerList: { connected: [], all: [], default: {} },
       agents: [],
+      skills: [],
     } as OpenCodeInventory,
   },
   reset() {
@@ -107,6 +108,7 @@ const runtimeMock = {
     this.state.inventory = {
       providerList: { connected: [], all: [], default: {} },
       agents: [],
+      skills: [],
     };
   },
 };
