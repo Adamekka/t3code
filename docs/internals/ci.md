@@ -2,8 +2,15 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-This fork runs CI as part of [the nightly release workflow](../../.github/workflows/release.yml).
-It does not run GitHub Actions for pull requests or pushes to `main`.
+This fork runs quality checks as part of
+[the nightly release workflow](../../.github/workflows/release.yml). It does not run GitHub Actions
+for pull requests or pushes to `main`.
+
+[The upstream rebase workflow](../../.github/workflows/rebase-upstream.yml) runs every three hours,
+offset 30 minutes from Nightly, and supports manual runs. It rebases the fork's `main` branch onto
+`pingdotgg/t3code`'s `main` branch so the fork-only commits remain at the top of the history. A
+conflict fails the workflow without changing the fork. Successful runs use a fixed force-with-lease,
+so a concurrent update to the fork's `main` branch also fails instead of being overwritten.
 
 Scheduled and manual nightlies run these checks before packaging:
 

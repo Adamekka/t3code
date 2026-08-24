@@ -1,0 +1,60 @@
+name: Rebase upstream
+
+on:
+  schedule:
+    - cron: "30 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: none
+
+concurrency:
+  group: rebase-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    name: Rebase main onto upstream/main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Rebase and update main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch --no-tags origin main
+          origin_main=$(git rev-parse FETCH_HEAD)
+          git fetch --no-tags upstream main
+          upstream_main=$(git rev-parse FETCH_HEAD)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --detach "$origin_main"
+
+          if ! git rebase "$upstream_main"; then
+            echo "Rebase conflicts with upstream/main:" >&2
+            git diff --name-only --diff-filter=U >&2
+            git rebase --abort
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$upstream_main" HEAD; then
+            echo "Rebased main does not contain upstream/main." >&2
+            exit 1
+          fi
+          if [[ $(git rev-parse HEAD) == "$origin_main" ]]; then
+            echo "main is already based on upstream/main."
+            exit 0
+          fi
+
+          # The fixed lease prevents this history rewrite from overwriting a concurrent main update.
+          git push --force-with-lease="refs/heads/main:$origin_main" origin HEAD:refs/heads/main
