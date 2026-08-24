@@ -12,6 +12,8 @@ Upstream rebases and merge conflicts are routine. When resolving them, preserve 
 
 Keep tool activity individually readable in the timeline. Each tool call should retain its own row, label, and icon instead of being collapsed into a combined tool summary.
 
+This fork distributes unsigned Apple Silicon desktop builds through a Homebrew Cask. Release automation is nightly-only and should cover the macOS app's quality gates and packaging. Do not restore upstream publishing for other platforms, mobile, npm, hosted services, relay configuration, AUR, or release announcements without an explicit maintainer request.
+
 ## What makes T3 Code special?
 
 We have over 200,000 users who love T3 Code. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
