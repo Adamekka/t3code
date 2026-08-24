@@ -159,6 +159,7 @@ interface BuildCliInput {
   readonly keepStage: Option.Option<boolean>;
   readonly signed: Option.Option<boolean>;
   readonly verbose: Option.Option<boolean>;
+  readonly noUpdates: Option.Option<boolean>;
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
@@ -263,6 +264,15 @@ export class InvalidMockUpdateServerPortError extends Schema.TaggedErrorClass<In
       inputLength: configuredPort.length,
       cause,
     });
+  }
+}
+
+export class ConflictingDesktopUpdateOptionsError extends Schema.TaggedErrorClass<ConflictingDesktopUpdateOptionsError>()(
+  "ConflictingDesktopUpdateOptionsError",
+  {},
+) {
+  override get message(): string {
+    return "Cannot enable mock updates when desktop updates are disabled.";
   }
 }
 
@@ -761,6 +771,7 @@ interface ResolvedBuildOptions {
   readonly keepStage: boolean;
   readonly signed: boolean;
   readonly verbose: boolean;
+  readonly noUpdates: boolean;
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
@@ -1333,7 +1344,11 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const signed = resolveBooleanFlag(input.signed, env.signed);
   const verbose = resolveBooleanFlag(input.verbose, env.verbose);
 
+  const noUpdates = Option.getOrElse(input.noUpdates, () => false);
   const mockUpdates = resolveBooleanFlag(input.mockUpdates, env.mockUpdates);
+  if (noUpdates && mockUpdates) {
+    return yield* new ConflictingDesktopUpdateOptionsError();
+  }
   const configuredMockUpdateServerPort = Option.getOrUndefined(env.mockUpdateServerPort);
   const mockUpdateServerPort =
     Option.getOrUndefined(input.mockUpdateServerPort) ??
@@ -1358,6 +1373,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     keepStage,
     signed,
     verbose,
+    noUpdates,
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
@@ -2047,6 +2063,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   target: string,
   version: string,
   signed: boolean,
+  noUpdates: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
   macPasskeySigning:
@@ -2074,8 +2091,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
     ],
   };
+  // This exported builder is also called directly, so it must enforce the
+  // invariant even when resolveBuildOptions is bypassed.
+  if (noUpdates && mockUpdates) {
+    return yield* new ConflictingDesktopUpdateOptionsError();
+  }
+
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+  const publishConfig = noUpdates ? undefined : yield* resolveGitHubPublishConfig(updateChannel);
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
   } else if (mockUpdates) {
@@ -2089,7 +2112,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
   if (platform === "mac") {
     buildConfig.mac = {
-      target: target === "dmg" ? [target, "zip"] : [target],
+      target: target === "dmg" && !noUpdates ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       protocols: [
@@ -2127,6 +2150,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       iconSize: 80,
       iconTextSize: 12,
+      ...(noUpdates ? { writeUpdateInfo: false } : {}),
     };
   }
 
@@ -2937,6 +2961,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.target,
       appVersion,
       options.signed,
+      options.noUpdates,
       options.mockUpdates,
       options.mockUpdateServerPort,
       macPasskeySigning && macEntitlementsPath
@@ -3104,6 +3129,16 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   const copiedArtifacts: string[] = [];
   for (const entry of stageEntries) {
+    // Electron Builder always writes internal diagnostics beside the artifact;
+    // no-updates builds expose only the DMG promised to package managers.
+    if (
+      options.noUpdates &&
+      options.platform === "mac" &&
+      options.target === "dmg" &&
+      !entry.endsWith(".dmg")
+    ) {
+      continue;
+    }
     const from = path.join(stageDistDir, entry);
     const stat = yield* fs.stat(from).pipe(Effect.orElseSucceed(() => null));
     if (!stat || stat.type !== "File") continue;
@@ -3167,6 +3202,10 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   ),
   verbose: Flag.boolean("verbose").pipe(
     Flag.withDescription("Stream subprocess stdout (env: T3CODE_DESKTOP_VERBOSE)."),
+    Flag.optional,
+  ),
+  noUpdates: Flag.boolean("no-updates").pipe(
+    Flag.withDescription("Disable the desktop update feed and update-only artifacts."),
     Flag.optional,
   ),
   mockUpdates: Flag.boolean("mock-updates").pipe(

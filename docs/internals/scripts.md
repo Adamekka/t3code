@@ -67,6 +67,8 @@ authenticated.
 ## Desktop artifacts
 
 - `vp run dist:desktop:artifact --platform <mac|linux|win> --target <target> --arch <arch>`: Builds a desktop artifact for a specific platform/target/arch.
+- Add `--no-updates` to omit the desktop update feed and update-only artifacts. A macOS DMG build in
+  this mode creates only the DMG rather than a DMG and ZIP.
 - `vp run dist:desktop:dmg`: Builds a shareable macOS `.dmg` into `./release`. Architecture defaults
   to the host, so this produces an arm64 DMG on Apple Silicon. Use `dist:desktop:dmg:arm64` or
   `dist:desktop:dmg:x64`, or pass `--arch <arm64|x64|universal>`, to force one.
