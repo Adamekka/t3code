@@ -15,6 +15,7 @@ Scheduled and manual nightlies run these checks before packaging:
 
 The release job runs on GitHub's `macos-15` arm64 runner. It builds the native resource monitor and
 packages one unsigned Apple Silicon DMG. The DMG has no Electron update feed because Homebrew owns
-updates for this distribution.
+updates for this distribution. After publishing the GitHub prerelease, the job updates the version
+and checksum in `Adamekka/homebrew-tap` and pushes the Cask change to its `main` branch.
 
 See [Nightly macOS releases](../operations/release.md) for triggers and release behavior.

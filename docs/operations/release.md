@@ -47,20 +47,17 @@ update feed and creates only the DMG instead of also creating ZIP, YAML, and blo
 Homebrew is responsible for delivering later versions.
 
 The build is unsigned and not notarized, so users may need to right-click the app and choose **Open**
-on first launch. The workflow does not require Apple, Azure, Clerk, Cloudflare, Vercel, npm, or Discord
-secrets.
+on first launch. The workflow requires `HOMEBREW_TAP_TOKEN`, a fine-grained GitHub token with Contents
+write access only to `Adamekka/homebrew-tap`. It does not require Apple, Azure, Clerk, Cloudflare,
+Vercel, npm, or Discord secrets.
+
+After the DMG is published, the workflow checks out the tap, updates the Cask's version and SHA-256,
+and pushes the change to `main`. A tap checkout or push failure fails the release job so a stale Cask
+is visible. Users receive the new Cask through `brew update` and `brew upgrade --cask
+adamekka-t3-code`; Homebrew does not upgrade installed applications in the background by default.
 
 ## Manual release
 
 Run the **Nightly** workflow from the GitHub Actions page. A manual invocation publishes a real
-nightly prerelease even when the source commit already has another nightly tag.
-
-After the workflow succeeds, use the release's arm64 DMG URL and checksum in the Homebrew Cask. The
-Cask should install the app bundle from the mounted image:
-
-```ruby
-app "T3 Code (Nightly).app"
-```
-
-The packaged product name comes from the nightly version, so verify the bundle name when creating the
-first Cask revision.
+nightly prerelease even when the source commit already has another nightly tag. The same run updates
+the Homebrew Cask after publishing the release asset; no manual checksum edit is required.
