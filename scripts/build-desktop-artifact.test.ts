@@ -18,6 +18,7 @@ import {
   BuildCommandFailedError,
   buildWslRuntimeArchiveArgs,
   parseWslRuntimeArchiveMembers,
+  ConflictingDesktopUpdateOptionsError,
   DesktopDmgBackgroundSourceMissingError,
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
@@ -329,6 +330,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "0.0.33-pr.8182.1",
         false,
         false,
+        false,
         undefined,
         undefined,
       );
@@ -336,6 +338,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "mac",
         "dmg",
         "0.0.33",
+        false,
         false,
         false,
         undefined,
@@ -572,6 +575,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "1.2.3",
         false,
         false,
+        false,
         undefined,
         undefined,
       );
@@ -579,6 +583,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "linux",
         "AppImage",
         "1.2.3",
+        false,
         false,
         false,
         undefined,
@@ -590,6 +595,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "1.2.3",
         false,
         false,
+        false,
         undefined,
         undefined,
         true,
@@ -598,6 +604,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "win",
         "nsis",
         "1.2.3",
+        false,
         false,
         false,
         undefined,
@@ -653,6 +660,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         iconSize: 80,
         iconTextSize: 12,
       });
+      assert.deepStrictEqual((mac.mac as Record<string, unknown>).target, ["dmg", "zip"]);
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
@@ -703,6 +711,41 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       },
     );
   });
+
+  it.effect("disables the update feed and ZIP artifact explicitly", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3-nightly.20260815.1",
+        false,
+        true,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.notProperty(config, "publish");
+      assert.deepStrictEqual((config.mac as Record<string, unknown>).target, ["dmg"]);
+      assert.equal((config.dmg as Record<string, unknown>).writeUpdateInfo, false);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("rejects disabling and mocking updates together", () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        createBuildConfig("mac", "dmg", "1.2.3", false, true, true, undefined, undefined),
+      );
+
+      assert.instanceOf(error, ConflictingDesktopUpdateOptionsError);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
 
   it("excludes node-pty binaries for the other Windows architecture", () => {
     assert.deepStrictEqual(resolveWindowsServerAsarIgnoreGlobs("x64"), [
@@ -1593,10 +1636,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
-        entitlementsPath: "/tmp/entitlements.mac.plist",
-        provisioningProfilePath: "/tmp/t3code.provisionprofile",
-      });
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        false,
+        undefined,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.plist",
+          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+        },
+      );
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.t3tools.t3code");
@@ -1617,6 +1669,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "1.2.3-nightly.20260815.1",
         false,
         false,
+        false,
         undefined,
         undefined,
       );
@@ -1634,6 +1687,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "win",
         "nsis",
         "1.2.3",
+        false,
         false,
         false,
         undefined,
@@ -1971,6 +2025,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         keepStage: Option.none(),
         signed: Option.none(),
         verbose: Option.none(),
+        noUpdates: Option.none(),
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
@@ -2011,6 +2066,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             keepStage: Option.none(),
             signed: Option.none(),
             verbose: Option.none(),
+            noUpdates: Option.none(),
             mockUpdates: Option.none(),
             mockUpdateServerPort: Option.none(),
             wslPrebuild: Option.none(),
@@ -2035,6 +2091,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         keepStage: Option.some(false),
         signed: Option.some(false),
         verbose: Option.some(false),
+        noUpdates: Option.some(true),
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
@@ -2058,8 +2115,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(resolved.keepStage, false);
       assert.equal(resolved.signed, false);
       assert.equal(resolved.verbose, false);
+      assert.equal(resolved.noUpdates, true);
       assert.equal(resolved.mockUpdates, false);
     }),
+  );
+
+  it.effect("rejects disabled and mock updates before staging", () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        resolveBuildOptions({
+          platform: Option.some("mac"),
+          target: Option.some("dmg"),
+          arch: Option.some("arm64"),
+          buildVersion: Option.none(),
+          outputDir: Option.some("release-test"),
+          skipBuild: Option.none(),
+          keepStage: Option.none(),
+          signed: Option.none(),
+          verbose: Option.none(),
+          noUpdates: Option.some(true),
+          mockUpdates: Option.some(true),
+          mockUpdateServerPort: Option.none(),
+          wslPrebuild: Option.none(),
+        }),
+      );
+
+      assert.instanceOf(error, ConflictingDesktopUpdateOptionsError);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 });
 
