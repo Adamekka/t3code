@@ -173,6 +173,16 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      - name: Verify Homebrew tap token
+        shell: bash
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN is required to publish nightly Cask updates." >&2
+            exit 1
+          fi
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
@@ -213,6 +223,7 @@ jobs:
           --verbose
 
       - name: Verify DMG output
+        id: dmg
         shell: bash
         run: |
           set -euo pipefail
@@ -222,6 +233,13 @@ jobs:
             echo "Expected exactly one DMG, found ${#artifacts[@]}." >&2
             exit 1
           fi
+          checksum_output=$(shasum -a 256 "${artifacts[0]}")
+          checksum=${checksum_output%% *}
+          if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Failed to calculate the DMG SHA-256." >&2
+            exit 1
+          fi
+          echo "sha256=$checksum" >> "$GITHUB_OUTPUT"
 
       - name: Publish nightly prerelease
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -235,3 +253,57 @@ jobs:
           files: release/*.dmg
           fail_on_unmatched_files: true
           token: ${{ github.token }}
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: Adamekka/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - id: cask
+        name: Update Homebrew Cask
+        shell: bash
+        env:
+          CASK_VERSION: ${{ needs.quality.outputs.version }}
+          CASK_SHA256: ${{ steps.dmg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          cask_path="homebrew-tap/Casks/adamekka-t3-code.rb"
+          ruby - "$cask_path" "$CASK_VERSION" "$CASK_SHA256" <<'RUBY'
+          path, version, sha256 = ARGV
+          abort "Invalid nightly version: #{version}" unless version.match?(/\A\d+\.\d+\.\d+-nightly\.\d{8}\.\d+\z/)
+          abort "Invalid SHA-256: #{sha256}" unless sha256.match?(/\A[0-9a-f]{64}\z/)
+
+          content = File.read(path)
+          replacements = {
+            /^  version "[^"]+"$/ => %(  version "#{version}"),
+            /^  sha256 "[0-9a-f]{64}"$/ => %(  sha256 "#{sha256}"),
+          }
+          replacements.each do |pattern, replacement|
+            matches = content.scan(pattern).length
+            abort "Expected one #{pattern.inspect} stanza in #{path}, found #{matches}" unless matches == 1
+            content = content.sub(pattern, replacement)
+          end
+          File.write(path, content)
+          RUBY
+          ruby -c "$cask_path"
+          git -C homebrew-tap diff --check
+          if git -C homebrew-tap diff --quiet -- Casks/adamekka-t3-code.rb; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Homebrew Cask update
+        if: steps.cask.outputs.changed == 'true'
+        env:
+          CASK_VERSION: ${{ needs.quality.outputs.version }}
+        run: |
+          set -euo pipefail
+          git -C homebrew-tap config user.name "github-actions[bot]"
+          git -C homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C homebrew-tap add -- Casks/adamekka-t3-code.rb
+          git -C homebrew-tap commit -m "adamekka-t3-code: $CASK_VERSION"
+          git -C homebrew-tap push origin HEAD:main
