@@ -482,6 +482,12 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     enabled: true,
     checkedAt,
     models,
+    slashCommands: [
+      {
+        name: "compact",
+        description: "Summarize the conversation and reduce context usage",
+      },
+    ],
     skills,
     probe: {
       installed: true,

@@ -316,7 +316,7 @@ import {
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import {
-  hasAvailableClaudeCompactionProvider,
+  hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
@@ -2791,11 +2791,12 @@ function ChatViewContent(props: ChatViewProps) {
     null;
   const compactionProviderAvailable = useMemo(
     () =>
-      hasAvailableClaudeCompactionProvider({
+      hasAvailableCompactionProvider({
         providers: applyProviderInstanceSettings(
           deriveProviderInstanceEntries(providerStatuses),
           settings,
         ),
+        driverKind: selectedProvider,
         instanceId: activeProviderInstanceId,
         lockedInstanceId: lockedProvider
           ? (activeThread?.session?.providerInstanceId ??
@@ -2809,6 +2810,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThread?.session?.providerInstanceId,
       lockedProvider,
       providerStatuses,
+      selectedProvider,
       settings,
     ],
   );
@@ -4835,7 +4837,6 @@ function ChatViewContent(props: ChatViewProps) {
     !activeThread ||
     !activeProject ||
     !isServerThread ||
-    selectedProvider !== "claudeAgent" ||
     !compactionProviderAvailable ||
     isWorking ||
     threadDetailLoading ||
@@ -4852,7 +4853,7 @@ function ChatViewContent(props: ChatViewProps) {
       : !activeProject
         ? "Choose a project before compacting"
         : !compactionProviderAvailable
-          ? "Enable a Claude provider before compacting"
+          ? "Enable a provider that supports compaction"
           : "Compacting is unavailable right now"
     : null;
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
