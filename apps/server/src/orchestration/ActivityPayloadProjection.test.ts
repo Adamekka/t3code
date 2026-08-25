@@ -669,6 +669,47 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it.each([
+    {
+      name: "OpenCode webfetch",
+      data: {
+        tool: "webfetch",
+        state: {
+          status: "completed",
+          input: { url: "https://example.com/docs" },
+          output: "Documentation contents",
+        },
+      },
+    },
+    {
+      name: "ACP fetch",
+      data: {
+        kind: "fetch",
+        rawInput: { url: "https://example.com/docs" },
+      },
+    },
+  ])("retains the requested URL for $name presentation", ({ data }) => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "web_search",
+        status: "completed",
+        detail: "Documentation contents",
+        data,
+      }),
+    );
+
+    expect(projected.payload).toEqual({
+      itemType: "web_search",
+      status: "completed",
+      detail: "Documentation contents",
+      data: {
+        kind: "search",
+        rawInput: { query: "https://example.com/docs" },
+      },
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
   it("projects a completed OpenCode Skill as a name and authored Markdown", () => {
     const projected = projectActivityPayload(
       activity({
