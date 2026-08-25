@@ -16,6 +16,8 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
+  ProviderTaskTranscriptError,
+  ProviderTaskTranscriptPage,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
   ThreadId,
@@ -47,12 +49,30 @@ export interface ProviderThreadSnapshot {
   readonly turns: ReadonlyArray<ProviderThreadTurnSnapshot>;
 }
 
+export interface ProviderTaskTranscriptReadInput {
+  readonly threadId: ThreadId;
+  readonly taskId: ProviderTaskTranscriptPage["taskId"];
+  readonly cursor: string | null;
+  readonly parentResumeCursor: unknown;
+  readonly cwd: string;
+}
+
+export type ProviderTaskTranscriptAccess<TError> =
+  | { readonly kind: "unsupported" }
+  | {
+      readonly kind: "supported";
+      readonly read: (
+        input: ProviderTaskTranscriptReadInput,
+      ) => Effect.Effect<ProviderTaskTranscriptPage, TError | ProviderTaskTranscriptError>;
+    };
+
 export interface ProviderAdapterShape<TError> {
   /**
    * Provider kind implemented by this adapter.
    */
   readonly provider: ProviderDriverKind;
   readonly capabilities: ProviderAdapterCapabilities;
+  readonly taskTranscript: ProviderTaskTranscriptAccess<TError>;
 
   /**
    * Start a provider-backed session.

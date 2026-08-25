@@ -2012,6 +2012,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       sessionModelSwitch: "in-session",
       promptlessTurnContinuation: true,
     },
+    taskTranscript: { kind: "unsupported" },
     startSession,
     sendTurn,
     interruptTurn,
