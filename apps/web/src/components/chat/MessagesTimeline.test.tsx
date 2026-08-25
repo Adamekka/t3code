@@ -1297,6 +1297,34 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("/workspace/SKILL.md");
   });
 
+  it("shows the Webfetch URL while keeping fetched content out of the compact row", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-webfetch",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-webfetch",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "webfetch",
+              tone: "tool",
+              itemType: "web_search",
+              searchQuery: "https://example.com/docs",
+              detail: "Documentation contents",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Webfetch - https://example.com/docs"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Documentation contents");
+  });
+
   it("shows the Bash heading with its command", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
