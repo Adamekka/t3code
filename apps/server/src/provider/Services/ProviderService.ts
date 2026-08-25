@@ -21,6 +21,9 @@ import type {
   ProviderSession,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
+  ProviderTaskTranscriptError,
+  ProviderTaskTranscriptInput,
+  ProviderTaskTranscriptPage,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
   ThreadId,
@@ -113,6 +116,14 @@ export interface ProviderServiceShape {
   readonly uploadFeedback: (
     input: ProviderUploadFeedbackInput,
   ) => Effect.Effect<ProviderUploadFeedbackResult, ProviderServiceError>;
+
+  /** Read one page of a provider-owned subagent transcript without resuming the thread. */
+  readonly readTaskTranscript: (
+    input: ProviderTaskTranscriptInput,
+  ) => Effect.Effect<
+    ProviderTaskTranscriptPage,
+    ProviderTaskTranscriptError | ProviderServiceError
+  >;
 
   /**
    * Canonical provider runtime event stream.

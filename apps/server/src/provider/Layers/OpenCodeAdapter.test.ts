@@ -20,8 +20,10 @@ import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import {
   ApprovalRequestId,
   OpenCodeSettings,
+  PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeTaskId,
   ThreadId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -54,7 +56,7 @@ type MessageEntry = {
   info: {
     id: string;
     role: "user" | "assistant";
-    time?: { completed: number };
+    time?: { created?: number; completed?: number };
   };
   parts: Array<unknown>;
 };
@@ -85,6 +87,9 @@ const runtimeMock = {
     summarizeError: null as Error | null,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
+    messagesBySessionId: new Map<string, MessageEntry[]>(),
+    messagesCalls: [] as Array<{ sessionID: string; limit?: number; before?: string }>,
+    nextMessageCursor: null as string | null,
     sessionStatuses: {} as Record<string, { type: "idle" | "busy" | "retry" }>,
     subscribedEvents: [] as Array<unknown | Promise<unknown>>,
     eventSubscribeObserved: null as (() => void) | null,
@@ -141,6 +146,9 @@ const runtimeMock = {
     this.state.summarizeError = null;
     this.state.closeError = null;
     this.state.messages = [];
+    this.state.messagesBySessionId.clear();
+    this.state.messagesCalls.length = 0;
+    this.state.nextMessageCursor = null;
     this.state.sessionStatuses = {};
     this.state.subscribedEvents = [];
     this.state.eventSubscribeObserved = null;
@@ -326,7 +334,19 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
           }
           return { data: true };
         },
-        messages: async () => ({ data: runtimeMock.state.messages }),
+        messages: async (input: { sessionID: string; limit?: number; before?: string }) => {
+          runtimeMock.state.messagesCalls.push(input);
+          const headers = new Headers();
+          if (runtimeMock.state.nextMessageCursor) {
+            headers.set("X-Next-Cursor", runtimeMock.state.nextMessageCursor);
+          }
+          return {
+            data:
+              runtimeMock.state.messagesBySessionId.get(input.sessionID) ??
+              runtimeMock.state.messages,
+            response: new Response(null, { headers }),
+          };
+        },
         message: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
           runtimeMock.state.messageCalls.push({ sessionID, messageID });
           if (runtimeMock.state.messageFailures > 0) {
@@ -889,6 +909,271 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       });
 
       yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("reads and normalizes a paginated direct-child transcript", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-transcript");
+      const taskId = RuntimeTaskId.make("child-transcript");
+      runtimeMock.state.sessionParentById.set(taskId, "parent-transcript");
+      runtimeMock.state.nextMessageCursor = "before-message-1";
+      runtimeMock.state.messagesBySessionId.set(taskId, [
+        {
+          info: { id: "user-1", role: "user", time: { created: 1_000 } },
+          parts: [
+            {
+              id: "text-user-1",
+              sessionID: taskId,
+              messageID: "user-1",
+              type: "text",
+              text: "Inspect the adapter.",
+            },
+          ],
+        },
+        {
+          info: {
+            id: "assistant-1",
+            role: "assistant",
+            time: { created: 2_000, completed: 3_000 },
+          },
+          parts: [
+            {
+              id: "reasoning-1",
+              sessionID: taskId,
+              messageID: "assistant-1",
+              type: "reasoning",
+              text: "I should read the file.",
+              time: { start: 2_000, end: 2_100 },
+            },
+            {
+              id: "tool-1",
+              sessionID: taskId,
+              messageID: "assistant-1",
+              type: "tool",
+              callID: "call-1",
+              tool: "read",
+              state: {
+                status: "completed",
+                input: { filePath: "README.md" },
+                output: "File contents",
+                title: "Read README.md",
+                metadata: {},
+                time: { start: 2_100, end: 2_200 },
+              },
+            },
+            {
+              id: "text-assistant-1",
+              sessionID: taskId,
+              messageID: "assistant-1",
+              type: "text",
+              text: "The adapter is ready.",
+            },
+          ],
+        },
+      ]);
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        resumeCursor: { schemaVersion: 1, sessionId: "parent-transcript" },
+      });
+      NodeAssert.equal(adapter.taskTranscript.kind, "supported");
+      if (adapter.taskTranscript.kind !== "supported") {
+        return;
+      }
+      const page = yield* adapter.taskTranscript.read({
+        threadId,
+        taskId,
+        cursor: "before-message-2",
+        parentResumeCursor: { schemaVersion: 1, sessionId: "parent-transcript" },
+        cwd: process.cwd(),
+      });
+
+      NodeAssert.equal(page.nextCursor, "before-message-1");
+      NodeAssert.deepEqual(
+        page.messages.flatMap((message) => message.parts.map((part) => part.type)),
+        ["text", "reasoning", "tool", "text"],
+      );
+      const tool = page.messages[1]?.parts[1];
+      NodeAssert.equal(tool?.type, "tool");
+      if (tool?.type === "tool") {
+        NodeAssert.equal(tool.status, "completed");
+        NodeAssert.match(tool.input ?? "", /README\.md/);
+        NodeAssert.equal(tool.output, "File contents");
+      }
+      NodeAssert.deepEqual(runtimeMock.state.messagesCalls.at(-1), {
+        sessionID: taskId,
+        limit: 50,
+        before: "before-message-2",
+      });
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("bounds transcript parts", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-transcript-bounds");
+      const taskId = RuntimeTaskId.make("child-transcript-bounds");
+      const oversizedText = "x".repeat(PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS + 1);
+      runtimeMock.state.sessionParentById.set(taskId, "parent-transcript-bounds");
+      runtimeMock.state.messagesBySessionId.set(
+        taskId,
+        Array.from(
+          { length: 1 },
+          (_, index): MessageEntry => ({
+            info: { id: `message-${index}`, role: "assistant" },
+            parts:
+              index === 0
+                ? [
+                    {
+                      id: "text-oversized",
+                      sessionID: taskId,
+                      messageID: "message-0",
+                      type: "text",
+                      text: oversizedText,
+                    },
+                    {
+                      id: "tool-output-oversized",
+                      sessionID: taskId,
+                      messageID: "message-0",
+                      type: "tool",
+                      callID: "call-output",
+                      tool: "read",
+                      state: {
+                        status: "completed",
+                        input: undefined,
+                        output: oversizedText,
+                      },
+                    },
+                    {
+                      id: "tool-error-oversized",
+                      sessionID: taskId,
+                      messageID: "message-0",
+                      type: "tool",
+                      callID: "call-error",
+                      tool: "bash",
+                      state: {
+                        status: "error",
+                        input: {},
+                        error: oversizedText,
+                      },
+                    },
+                  ]
+                : [],
+          }),
+        ),
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        resumeCursor: { schemaVersion: 1, sessionId: "parent-transcript-bounds" },
+      });
+      NodeAssert.equal(adapter.taskTranscript.kind, "supported");
+      if (adapter.taskTranscript.kind !== "supported") {
+        return;
+      }
+      const page = yield* adapter.taskTranscript.read({
+        threadId,
+        taskId,
+        cursor: null,
+        parentResumeCursor: { schemaVersion: 1, sessionId: "parent-transcript-bounds" },
+        cwd: process.cwd(),
+      });
+
+      NodeAssert.equal(page.nextCursor, null);
+      const [text, output, failure] = page.messages[0]?.parts ?? [];
+      NodeAssert.equal(text?.type, "text");
+      if (text?.type === "text") {
+        NodeAssert.equal(text.text.length, PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS);
+        NodeAssert.equal(text.truncated, true);
+      }
+      NodeAssert.equal(output?.type, "tool");
+      if (output?.type === "tool") {
+        NodeAssert.equal(output.input, undefined);
+        NodeAssert.equal(output.output?.length, PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS);
+        NodeAssert.equal(output.outputTruncated, true);
+        NodeAssert.equal(output.errorTruncated, false);
+      }
+      NodeAssert.equal(failure?.type, "tool");
+      if (failure?.type === "tool") {
+        NodeAssert.equal(failure.error?.length, PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS);
+        NodeAssert.equal(failure.outputTruncated, false);
+        NodeAssert.equal(failure.errorTruncated, true);
+      }
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects a session that is not a direct child of the thread", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-foreign-transcript");
+      const taskId = RuntimeTaskId.make("foreign-child");
+      runtimeMock.state.sessionParentById.set(taskId, "another-parent");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+        resumeCursor: { schemaVersion: 1, sessionId: "expected-parent" },
+      });
+      NodeAssert.equal(adapter.taskTranscript.kind, "supported");
+      if (adapter.taskTranscript.kind !== "supported") {
+        return;
+      }
+      const messageCallCount = runtimeMock.state.messagesCalls.length;
+      const error = yield* adapter.taskTranscript
+        .read({
+          threadId,
+          taskId,
+          cursor: null,
+          parentResumeCursor: { schemaVersion: 1, sessionId: "expected-parent" },
+          cwd: process.cwd(),
+        })
+        .pipe(Effect.flip);
+
+      NodeAssert.equal(error._tag, "ProviderTaskTranscriptError");
+      if (error._tag === "ProviderTaskTranscriptError") {
+        NodeAssert.equal(error.reason, "not-found");
+      }
+      NodeAssert.equal(runtimeMock.state.messagesCalls.length, messageCallCount);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("reads an inactive transcript without creating or updating a provider session", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-inactive-transcript");
+      const taskId = RuntimeTaskId.make("inactive-child");
+      runtimeMock.state.sessionParentById.set(taskId, "inactive-parent");
+      runtimeMock.state.messagesBySessionId.set(taskId, [
+        {
+          info: { id: "inactive-message", role: "assistant", time: { created: 1_000 } },
+          parts: [],
+        },
+      ]);
+      NodeAssert.equal(adapter.taskTranscript.kind, "supported");
+      if (adapter.taskTranscript.kind !== "supported") {
+        return;
+      }
+      const page = yield* adapter.taskTranscript.read({
+        threadId,
+        taskId,
+        cursor: null,
+        parentResumeCursor: { schemaVersion: 1, sessionId: "inactive-parent" },
+        cwd: process.cwd(),
+      });
+
+      NodeAssert.equal(page.messages[0]?.id, "inactive-message");
+      NodeAssert.deepEqual(runtimeMock.state.sessionCreateInputs, []);
+      NodeAssert.deepEqual(runtimeMock.state.sessionUpdateCalls, []);
+      NodeAssert.deepEqual(runtimeMock.state.closeCalls, ["http://127.0.0.1:9999"]);
     }),
   );
 
