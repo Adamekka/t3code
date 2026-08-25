@@ -29,6 +29,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ResolvedKeybindingRule,
+  RuntimeTaskId,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
@@ -663,6 +664,8 @@ const buildAppUnderTest = (options?: {
             ...options?.layers?.providerRegistry,
           }),
           Layer.mock(ProviderService.ProviderService)({
+            readTaskTranscript: () =>
+              Effect.die("Provider task transcript is not stubbed in this test"),
             uploadFeedback: () => Effect.die("Provider feedback is not stubbed in this test"),
             ...options?.layers?.providerService,
           }),
@@ -4588,6 +4591,83 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.deepStrictEqual(response, { feedbackId: "codex-thread-feedback" });
       assert.deepStrictEqual(uploadFeedback.mock.calls, [[input]]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("reads a provider task transcript through websocket rpc", () =>
+    Effect.gen(function* () {
+      const input = {
+        threadId: ThreadId.make("thread-task-transcript"),
+        taskId: RuntimeTaskId.make("task-transcript"),
+        cursor: null,
+      };
+      const readTaskTranscript = vi.fn<
+        ProviderService.ProviderService["Service"]["readTaskTranscript"]
+      >(() =>
+        Effect.succeed({
+          provider: ProviderDriverKind.make("opencode"),
+          taskId: input.taskId,
+          messages: [
+            {
+              id: "message-1",
+              role: "assistant",
+              parts: [{ id: "part-1", type: "text", text: "Inspected.", truncated: false }],
+            },
+          ],
+          nextCursor: null,
+        }),
+      );
+      yield* buildAppUnderTest({
+        layers: {
+          providerService: { readTaskTranscript },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.providerGetTaskTranscript](input)),
+      );
+
+      assert.deepStrictEqual(response.messages[0]?.parts, [
+        { id: "part-1", type: "text", text: "Inspected.", truncated: false },
+      ]);
+      assert.deepStrictEqual(readTaskTranscript.mock.calls, [[input]]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("hides provider details when a task transcript read fails", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-task-transcript-failure");
+      const taskId = RuntimeTaskId.make("task-transcript-failure");
+      yield* buildAppUnderTest({
+        layers: {
+          providerService: {
+            readTaskTranscript: () =>
+              Effect.fail(
+                new ProviderAdapterRequestError({
+                  provider: "opencode",
+                  method: "session.messages",
+                  detail: "private provider response",
+                }),
+              ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.providerGetTaskTranscript]({ threadId, taskId, cursor: null }).pipe(
+            Effect.flip,
+          ),
+        ),
+      );
+
+      assert.strictEqual(error._tag, "ProviderTaskTranscriptError");
+      if (error._tag === "ProviderTaskTranscriptError") {
+        assert.strictEqual(error.reason, "unavailable");
+        assert.notInclude(error.message, "private provider response");
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

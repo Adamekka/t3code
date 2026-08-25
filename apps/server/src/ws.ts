@@ -48,6 +48,7 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  ProviderTaskTranscriptError,
   ProviderUploadFeedbackError,
   RelayClientInstallFailedError,
   type RelayClientInstallProgressEvent,
@@ -142,6 +143,7 @@ import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isProviderTaskTranscriptError = Schema.is(ProviderTaskTranscriptError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -1633,6 +1635,31 @@ const makeWsRpcLayer = (
               : providerRegistry.refresh()
             ).pipe(Effect.map((providers) => ({ providers }))),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.providerGetTaskTranscript]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.providerGetTaskTranscript,
+            providerService.readTaskTranscript(input).pipe(
+              Effect.tapError((cause) =>
+                isProviderTaskTranscriptError(cause)
+                  ? Effect.void
+                  : Effect.logWarning("failed to read provider task transcript", {
+                      threadId: input.threadId,
+                      taskId: input.taskId,
+                      cause,
+                    }),
+              ),
+              Effect.mapError((cause) =>
+                isProviderTaskTranscriptError(cause)
+                  ? cause
+                  : new ProviderTaskTranscriptError({
+                      threadId: input.threadId,
+                      taskId: input.taskId,
+                      reason: "unavailable",
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "provider" },
           ),
         [WS_METHODS.providerUploadFeedback]: (input) =>
           observeRpcEffect(
