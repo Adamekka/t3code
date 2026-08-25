@@ -21,7 +21,7 @@ import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -29,6 +29,7 @@ import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
+import { AgentTranscript } from "~/components/agents/AgentTranscript";
 
 /**
  * In-flight states all present as Working (one steady state, per the
@@ -137,8 +138,16 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   );
 }
 
-/** Flat, non-interactive agent status line. No unfold. */
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+/** Stable-height agent status line. OpenCode rows can open their provider transcript. */
+function AgentRow({
+  agent,
+  onInspect,
+  buttonRef,
+}: {
+  agent: RuntimeSubagent;
+  onInspect?: () => void;
+  buttonRef?: (element: HTMLButtonElement | null) => void;
+}) {
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -153,8 +162,8 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
     agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
 
-  return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
+  const content = (
+    <>
       <span className="col-start-1 row-start-1 flex items-center">
         <StatusDot status={agent.status} />
       </span>
@@ -172,6 +181,7 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
           {agent.status === "completed" ? (
             <Check aria-hidden className="size-3 text-success" />
           ) : null}
+          {onInspect ? <ChevronRight aria-hidden className="size-3" /> : null}
         </span>
       </span>
       <span
@@ -186,7 +196,19 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
         {metadata.join(" · ")}
       </span>
       <span className="sr-only">{visuals.label}</span>
-    </div>
+      {onInspect ? <span className="sr-only">View transcript</span> : null}
+    </>
+  );
+  const className = cn(
+    "grid h-[3.875rem] w-full grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left",
+    onInspect && "hover:bg-accent/40",
+  );
+  return onInspect ? (
+    <button ref={buttonRef} type="button" className={className} onClick={onInspect}>
+      {content}
+    </button>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }
 
@@ -524,11 +546,65 @@ export function AgentsPanel({
   model,
   environmentId = null,
   threadId = null,
+  provider,
+  cwd,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
+  provider: ProviderDriverKind;
+  cwd: string | undefined;
 }) {
+  const [selection, setSelection] = useState<{
+    readonly threadId: ThreadId;
+    readonly agentId: string;
+  } | null>(null);
+  const [returnFocusAgentId, setReturnFocusAgentId] = useState<string | null>(null);
+  const agentButtonById = useRef(new Map<string, HTMLButtonElement>());
+  const selectedAgent =
+    provider === "opencode" &&
+    environmentId !== null &&
+    threadId !== null &&
+    selection?.threadId === threadId
+      ? (model.directAgents.find((agent) => agent.id === selection.agentId) ?? null)
+      : null;
+
+  useEffect(() => {
+    if (
+      selection &&
+      (selection.threadId !== threadId ||
+        provider !== "opencode" ||
+        !model.directAgents.some((agent) => agent.id === selection.agentId))
+    ) {
+      setSelection(null);
+    }
+  }, [model.directAgents, provider, selection, threadId]);
+
+  useEffect(() => {
+    if (selection !== null || returnFocusAgentId === null) {
+      return;
+    }
+    agentButtonById.current.get(returnFocusAgentId)?.focus();
+    setReturnFocusAgentId(null);
+  }, [returnFocusAgentId, selection]);
+
+  if (selectedAgent && environmentId !== null && threadId !== null) {
+    return (
+      <AgentTranscript
+        key={`${threadId}:${selectedAgent.id}`}
+        agent={selectedAgent}
+        environmentId={environmentId}
+        threadId={threadId}
+        cwd={cwd}
+        statusLabel={STATUS_VISUALS[selectedAgent.status].label}
+        onBack={() => {
+          setReturnFocusAgentId(selectedAgent.id);
+          setSelection(null);
+        }}
+      />
+    );
+  }
+
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -560,7 +636,22 @@ export function AgentsPanel({
                 Direct spawns
               </div>
               {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  {...(provider === "opencode" && environmentId !== null && threadId !== null
+                    ? {
+                        onInspect: () => setSelection({ threadId, agentId: agent.id }),
+                        buttonRef: (element: HTMLButtonElement | null) => {
+                          if (element) {
+                            agentButtonById.current.set(agent.id, element);
+                          } else {
+                            agentButtonById.current.delete(agent.id);
+                          }
+                        },
+                      }
+                    : {})}
+                />
               ))}
             </section>
           ) : null}
