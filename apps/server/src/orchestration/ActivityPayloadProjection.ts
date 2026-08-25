@@ -393,7 +393,11 @@ export function projectActivityPayload(
     toolName?.toLowerCase() === "task" ||
     data.kind === "task" ||
     activity.summary.trim().toLowerCase() === "task";
-  const isSearchActivity = toolName?.toLowerCase() === "grep" || data.kind === "search";
+  const isSearchActivity =
+    toolName?.toLowerCase() === "grep" ||
+    payload.itemType === "web_search" ||
+    data.kind === "search" ||
+    data.kind === "fetch";
   const isTodoActivity = toolName?.toLowerCase() === "todowrite" || data.kind === "todo";
   const readOutput =
     isReadActivity && typeof payload.detail === "string"
@@ -594,7 +598,8 @@ export function projectActivityPayload(
     const searchQuery =
       asTrimmedString(searchInput?.query) ??
       asTrimmedString(searchInput?.pattern) ??
-      asTrimmedString(searchInput?.searchTerm);
+      asTrimmedString(searchInput?.searchTerm) ??
+      asTrimmedString(searchInput?.url);
     if (searchQuery) {
       projectedData.rawInput = { query: searchQuery };
     }
