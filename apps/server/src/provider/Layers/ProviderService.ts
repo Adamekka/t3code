@@ -19,6 +19,8 @@ import {
   ProviderSendTurnInput,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
+  ProviderTaskTranscriptError,
+  ProviderTaskTranscriptInput,
   ProviderUploadFeedbackInput,
   type ProviderInstanceId,
   type ProviderDriverKind,
@@ -1157,6 +1159,49 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const readTaskTranscript: ProviderServiceMethod<"readTaskTranscript"> = Effect.fn(
+    "readTaskTranscript",
+  )(function* (rawInput) {
+    const input = yield* decodeInputOrValidationError({
+      operation: "ProviderService.readTaskTranscript",
+      schema: ProviderTaskTranscriptInput,
+      payload: rawInput,
+    });
+    const bindingOption = yield* directory.getBinding(input.threadId);
+    const binding = Option.getOrUndefined(bindingOption);
+    if (!binding) {
+      return yield* new ProviderTaskTranscriptError({
+        threadId: input.threadId,
+        taskId: input.taskId,
+        reason: "unavailable",
+      });
+    }
+    const instanceId = yield* requireBindingInstanceId(
+      "ProviderService.readTaskTranscript",
+      binding,
+    );
+    const adapter = yield* registry.getByInstance(instanceId);
+    if (adapter.taskTranscript.kind === "unsupported") {
+      return yield* new ProviderTaskTranscriptError({
+        threadId: input.threadId,
+        taskId: input.taskId,
+        reason: "unsupported",
+      });
+    }
+
+    yield* Effect.annotateCurrentSpan({
+      "provider.operation": "read-task-transcript",
+      "provider.kind": adapter.provider,
+      "provider.thread_id": input.threadId,
+      "provider.task_id": input.taskId,
+    });
+    return yield* adapter.taskTranscript.read({
+      ...input,
+      parentResumeCursor: binding.resumeCursor,
+      cwd: readPersistedCwd(binding.runtimePayload) ?? serverConfig.cwd,
+    });
+  });
+
   const runStopAll = Effect.fn("runStopAll")(function* () {
     const threadIds = yield* directory.listThreadIds();
     const currentAdapters = yield* getAdapterEntries;
@@ -1228,6 +1273,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,
+    readTaskTranscript,
     uploadFeedback,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

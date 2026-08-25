@@ -1,10 +1,15 @@
 import {
   EventId,
   type OpenCodeSettings,
+  PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE,
+  PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  ProviderTaskTranscriptError,
+  type ProviderTaskTranscriptMessage,
+  type ProviderTaskTranscriptPart,
   RuntimeItemId,
   RuntimeRequestId,
   RuntimeTaskId,
@@ -64,6 +69,7 @@ import {
 import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
+const isProviderTaskTranscriptError = Schema.is(ProviderTaskTranscriptError);
 
 /**
  * Version tag stamped into the OpenCode resume cursor. Bump if the cursor
@@ -3920,6 +3926,194 @@ export function makeOpenCodeAdapter(
     const hasSession: OpenCodeAdapterShape["hasSession"] = (threadId) =>
       Effect.sync(() => sessions.has(threadId));
 
+    const readTaskTranscript = Effect.fn("readTaskTranscript")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly taskId: RuntimeTaskId;
+      readonly cursor: string | null;
+      readonly parentResumeCursor: unknown;
+      readonly cwd: string;
+    }) {
+      const parentResume = parseOpenCodeResume(input.parentResumeCursor);
+      const activeContext = sessions.get(input.threadId);
+      const parentSessionId = activeContext?.openCodeSessionId ?? parentResume?.sessionId;
+      if (!parentSessionId) {
+        return yield* new ProviderTaskTranscriptError({
+          threadId: input.threadId,
+          taskId: input.taskId,
+          reason: "unavailable",
+        });
+      }
+
+      function boundedTranscriptText(value: string): {
+        readonly text: string;
+        readonly truncated: boolean;
+      } {
+        if (value.length <= PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS) {
+          return { text: value, truncated: false };
+        }
+        return {
+          text: value.slice(0, PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS),
+          truncated: true,
+        };
+      }
+
+      function serializeTranscriptValue(value: unknown):
+        | {
+            readonly text: string;
+            readonly truncated: boolean;
+          }
+        | undefined {
+        if (value === undefined) {
+          return undefined;
+        }
+        try {
+          const encoded = JSON.stringify(value, null, 2);
+          return encoded === undefined
+            ? { text: "This tool input could not be serialized.", truncated: false }
+            : boundedTranscriptText(encoded);
+        } catch {
+          // Provider tool inputs should be JSON values; keep the malformed entry visible.
+          return { text: "This tool input could not be serialized.", truncated: false };
+        }
+      }
+
+      function normalizePart(part: Part): ProviderTaskTranscriptPart {
+        if (part.type === "text" || part.type === "reasoning") {
+          const content =
+            typeof part.text === "string"
+              ? boundedTranscriptText(part.text)
+              : { text: "This provider text could not be read.", truncated: false };
+          return {
+            id: part.id,
+            type: part.type,
+            text: content.text,
+            truncated: content.truncated,
+          };
+        }
+        if (part.type === "tool") {
+          const inputValue = serializeTranscriptValue(part.state.input);
+          const outputValue =
+            part.state.status === "completed"
+              ? typeof part.state.output === "string"
+                ? boundedTranscriptText(part.state.output)
+                : { text: "This tool output could not be read.", truncated: false }
+              : undefined;
+          const errorValue =
+            part.state.status === "error"
+              ? typeof part.state.error === "string"
+                ? boundedTranscriptText(part.state.error)
+                : { text: "This tool error could not be read.", truncated: false }
+              : undefined;
+          return {
+            id: part.id,
+            type: "tool",
+            toolCallId: part.callID,
+            name: part.tool,
+            status: part.state.status === "error" ? "failed" : part.state.status,
+            ...(inputValue ? { input: inputValue.text } : {}),
+            ...(outputValue ? { output: outputValue.text } : {}),
+            ...(errorValue ? { error: errorValue.text } : {}),
+            inputTruncated: inputValue?.truncated ?? false,
+            outputTruncated: outputValue?.truncated ?? false,
+            errorTruncated: errorValue?.truncated ?? false,
+          };
+        }
+
+        return {
+          id: part.id,
+          type: "notice",
+          label: `OpenCode ${part.type}`,
+          detail: "This provider event is not rendered in the transcript.",
+          truncated: false,
+        };
+      }
+
+      const readFromClient = Effect.fn("readTaskTranscriptFromClient")(function* (
+        client: OpencodeClient,
+      ) {
+        const child = yield* runOpenCodeSdk("session.get", () =>
+          client.session.get({ sessionID: input.taskId }),
+        ).pipe(
+          Effect.catchIf(
+            (cause) => isOpenCodeNotFound(cause),
+            () =>
+              new ProviderTaskTranscriptError({
+                threadId: input.threadId,
+                taskId: input.taskId,
+                reason: "not-found",
+              }),
+          ),
+        );
+        if (!child.data || child.data.parentID !== parentSessionId) {
+          return yield* new ProviderTaskTranscriptError({
+            threadId: input.threadId,
+            taskId: input.taskId,
+            reason: "not-found",
+          });
+        }
+
+        const result = yield* runOpenCodeSdk("session.messages", () =>
+          client.session.messages({
+            sessionID: input.taskId,
+            limit: PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE,
+            ...(input.cursor ? { before: input.cursor } : {}),
+          }),
+        );
+        if (!Array.isArray(result.data)) {
+          return yield* new OpenCodeRuntimeError({
+            operation: "session.messages",
+            detail: "OpenCode session.messages returned no message list.",
+          });
+        }
+
+        const messages: Array<ProviderTaskTranscriptMessage> = result.data.map((entry) => ({
+          id: entry.info.id,
+          role: entry.info.role,
+          ...(typeof entry.info.time?.created === "number"
+            ? { createdAt: isoFromEpochMs(entry.info.time.created) }
+            : {}),
+          parts: (entry.parts as Array<Part>).map(normalizePart),
+        }));
+        return {
+          provider: PROVIDER,
+          taskId: input.taskId,
+          messages,
+          nextCursor: result.response.headers.get("X-Next-Cursor")?.trim() || null,
+        };
+      });
+
+      if (activeContext) {
+        return yield* readFromClient(activeContext.client).pipe(
+          Effect.mapError((cause) =>
+            isProviderTaskTranscriptError(cause) ? cause : toRequestError(cause),
+          ),
+        );
+      }
+
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const server = yield* openCodeRuntime.connectToOpenCodeServer({
+            binaryPath: openCodeSettings.binaryPath,
+            directory: input.cwd,
+            serverUrl: openCodeSettings.serverUrl,
+            ...(options?.environment ? { environment: options.environment } : {}),
+          });
+          const client = openCodeRuntime.createOpenCodeSdkClient({
+            baseUrl: server.url,
+            directory: input.cwd,
+            ...(server.external && openCodeSettings.serverPassword
+              ? { serverPassword: openCodeSettings.serverPassword }
+              : {}),
+          });
+          return yield* readFromClient(client);
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          isProviderTaskTranscriptError(cause) ? cause : toRequestError(cause),
+        ),
+      );
+    });
+
     const readThread: OpenCodeAdapterShape["readThread"] = Effect.fn("readThread")(
       function* (threadId) {
         const context = yield* ensureSessionContext(sessions, threadId);
@@ -3992,6 +4186,7 @@ export function makeOpenCodeAdapter(
       capabilities: {
         sessionModelSwitch: "in-session",
       },
+      taskTranscript: { kind: "supported", read: readTaskTranscript },
       startSession,
       sendTurn,
       interruptTurn,

@@ -1,4 +1,4 @@
-import { ORCHESTRATION_WS_METHODS } from "@t3tools/contracts";
+import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
@@ -18,6 +18,12 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       // Scripts are immutable per run: cache generously.
       staleTimeMs: 300_000,
       idleTtlMs: 300_000,
+    }),
+    taskTranscript: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:provider:task-transcript",
+      tag: WS_METHODS.providerGetTaskTranscript,
+      staleTimeMs: 0,
+      idleTtlMs: 30_000,
     }),
     fullThreadDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:full-thread-diff",
