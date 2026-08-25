@@ -81,11 +81,13 @@ const runtimeMock = {
     messageCalls: [] as Array<{ sessionID: string; messageID: string }>,
     messageFailures: 0,
     promptCalls: [] as Array<unknown>,
+    summarizeCalls: [] as Array<unknown>,
     promptAsyncError: null as Error | null,
     promptAsyncImplementation: null as (() => Promise<void>) | null,
     autoPromptEcho: true,
     autoConnect: true,
     promptEchoEvents: [] as Array<unknown>,
+    summarizeError: null as Error | null,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
     sessionStatuses: {} as Record<string, { type: "idle" | "busy" | "retry" }>,
@@ -138,11 +140,13 @@ const runtimeMock = {
     this.state.messageCalls.length = 0;
     this.state.messageFailures = 0;
     this.state.promptCalls.length = 0;
+    this.state.summarizeCalls.length = 0;
     this.state.promptAsyncError = null;
     this.state.promptAsyncImplementation = null;
     this.state.autoPromptEcho = true;
     this.state.autoConnect = true;
     this.state.promptEchoEvents.length = 0;
+    this.state.summarizeError = null;
     this.state.closeError = null;
     this.state.messages = [];
     this.state.sessionStatuses = {};
@@ -330,6 +334,13 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
               },
             });
           }
+        },
+        summarize: async (input: unknown) => {
+          runtimeMock.state.summarizeCalls.push(input);
+          if (runtimeMock.state.summarizeError) {
+            throw runtimeMock.state.summarizeError;
+          }
+          return { data: true };
         },
         messages: async () => ({ data: runtimeMock.state.messages }),
         message: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
@@ -959,6 +970,172 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         sessionId: "ses_persisted",
       });
 
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("routes /compact through OpenCode's native summarization API", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "  /compact\n",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "anthropic/claude-sonnet-4-5",
+        ),
+      });
+
+      NodeAssert.deepEqual(runtimeMock.state.summarizeCalls, [
+        {
+          sessionID: "http://127.0.0.1:9999/session",
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4-5",
+          auto: false,
+        },
+      ]);
+      NodeAssert.deepEqual(runtimeMock.state.promptCalls, []);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects native compaction with attachments", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact-attachment");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const error = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "/compact",
+          attachments: [
+            {
+              type: "image",
+              id: "thread-opencode-compact-attachment-12345678-1234-1234-1234-123456789abc",
+              name: "context.png",
+              mimeType: "image/png",
+              sizeBytes: 1,
+            },
+          ],
+          modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+        })
+        .pipe(Effect.flip);
+
+      NodeAssert.equal(error._tag, "ProviderAdapterValidationError");
+      if (error._tag === "ProviderAdapterValidationError") {
+        NodeAssert.equal(error.issue, "OpenCode compaction cannot include attachments.");
+      }
+      NodeAssert.deepEqual(runtimeMock.state.summarizeCalls, []);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects native compaction while a turn is active", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact-active-turn");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Keep working",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+      });
+
+      const error = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "/compact",
+          modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+        })
+        .pipe(Effect.flip);
+
+      NodeAssert.equal(error._tag, "ProviderAdapterValidationError");
+      if (error._tag === "ProviderAdapterValidationError") {
+        NodeAssert.equal(error.issue, "OpenCode compaction requires an idle session.");
+      }
+      NodeAssert.deepEqual(runtimeMock.state.summarizeCalls, []);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("restores the session when native compaction fails", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compact-failure");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      runtimeMock.state.summarizeError = new Error("compaction failed");
+      const error = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "/compact",
+          modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+        })
+        .pipe(Effect.flip);
+      const session = (yield* adapter.listSessions()).find((entry) => entry.threadId === threadId);
+
+      NodeAssert.equal(error._tag, "ProviderAdapterRequestError");
+      NodeAssert.equal(
+        error.message,
+        "Provider adapter request failed (opencode) for session.summarize: compaction failed",
+      );
+      NodeAssert.equal(session?.status, "ready");
+      NodeAssert.equal(session?.activeTurnId, undefined);
+      NodeAssert.equal(session?.lastError, "compaction failed");
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("maps OpenCode compaction completion into thread state", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-compacted-event");
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "session.compacted",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+          },
+        },
+      ];
+      const eventFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) => event.threadId === threadId && event.type === "thread.state.changed",
+        ),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const [event] = Array.from(yield* Fiber.join(eventFiber).pipe(Effect.timeout("1 second")));
+      NodeAssert.ok(event?.type === "thread.state.changed");
+      NodeAssert.equal(event.payload.state, "compacted");
       yield* adapter.stopSession(threadId);
     }),
   );

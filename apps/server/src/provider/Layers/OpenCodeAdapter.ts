@@ -2571,6 +2571,22 @@ export function makeOpenCodeAdapter(
           break;
         }
 
+        case "session.compacted": {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "thread.state.changed",
+            payload: {
+              state: "compacted",
+              detail: event,
+            },
+          });
+          break;
+        }
+
         case "message.updated": {
           const info = event.properties.info;
           const promptAdmission = context.promptAdmission;
@@ -3367,11 +3383,17 @@ export function makeOpenCodeAdapter(
           issue: "OpenCode turns require text input or at least one attachment.",
         });
       }
-
+      const isCompaction = text === "/compact";
+      if (isCompaction && fileParts.length > 0) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "sendTurn",
+          issue: "OpenCode compaction cannot include attachments.",
+        });
+      }
       return yield* context.promptSemaphore.withPermit(
         Effect.gen(function* () {
           const freshTurnId = TurnId.make(`opencode-turn-${yield* randomUUIDv4}`);
-          const messageId = yield* makeOpenCodeMessageId();
           const pendingCancellation = context.cancellation;
           if (pendingCancellation) {
             const cancellationResult = yield* Deferred.await(pendingCancellation.completion).pipe(
@@ -3390,6 +3412,114 @@ export function makeOpenCodeAdapter(
           // A sendTurn while a turn is active is a steer. OpenCode queues the
           // prompt into the running session, so the active turn id is reused.
           const steeringTurnId = context.activeTurnId;
+          if (isCompaction && steeringTurnId !== undefined) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "sendTurn",
+              issue: "OpenCode compaction requires an idle session.",
+            });
+          }
+          // Summarization has no user-message echo, so it cannot use the
+          // prompt-admission recovery path below.
+          if (isCompaction) {
+            const turnId = freshTurnId;
+            const promptGeneration = context.promptGeneration + 1;
+            context.promptGeneration = promptGeneration;
+            yield* cancelIdleReconciliation(context);
+            context.activeTurnId = turnId;
+            context.activeAgent = undefined;
+            context.activeVariant = undefined;
+            context.awaitingBusyAfterInterruption = context.interruptedTurnId !== undefined;
+            yield* updateProviderSession(
+              context,
+              {
+                status: "running",
+                activeTurnId: turnId,
+                model: modelSelection?.model ?? context.session.model,
+              },
+              { clearLastError: true },
+            );
+            yield* emit({
+              ...(yield* buildEventBase({ threadId: input.threadId, turnId })),
+              type: "turn.started",
+              payload: {
+                model: modelSelection?.model ?? context.session.model,
+              },
+            });
+
+            const compactionExit = yield* runOpenCodeSdk("session.summarize", (signal) =>
+              context.client.session.summarize(
+                {
+                  sessionID: context.openCodeSessionId,
+                  providerID: parsedModel.providerID,
+                  modelID: parsedModel.modelID,
+                  auto: false,
+                },
+                { signal },
+              ),
+            ).pipe(
+              Effect.asVoid,
+              Effect.mapError(toRequestError),
+              Effect.tapError((requestError) =>
+                Effect.gen(function* () {
+                  if (
+                    (yield* Ref.get(context.stopped)) ||
+                    sessions.get(input.threadId) !== context ||
+                    context.activeTurnId !== turnId ||
+                    context.promptGeneration !== promptGeneration ||
+                    context.cancellation?.turnId === turnId
+                  ) {
+                    return;
+                  }
+                  context.activeTurnId = undefined;
+                  context.activeAgent = undefined;
+                  context.activeVariant = undefined;
+                  context.awaitingBusyAfterInterruption = false;
+                  yield* updateProviderSession(
+                    context,
+                    {
+                      status: "ready",
+                      model: modelSelection?.model ?? context.session.model,
+                      lastError: requestError.detail,
+                    },
+                    { clearActiveTurnId: true },
+                  );
+                  yield* emit({
+                    ...(yield* buildEventBase({ threadId: input.threadId, turnId })),
+                    type: "turn.aborted",
+                    payload: { reason: requestError.detail },
+                  });
+                }),
+              ),
+              Effect.exit,
+            );
+            const finalCancellation = context.cancellation;
+            const intentionallyCancelled =
+              (yield* Ref.get(context.stopped)) ||
+              sessions.get(input.threadId) !== context ||
+              context.promptGeneration !== promptGeneration ||
+              context.interruptedTurnId === turnId ||
+              finalCancellation?.turnId === turnId;
+            if (Exit.isFailure(compactionExit) && !intentionallyCancelled) {
+              return yield* Effect.failCause(compactionExit.cause);
+            }
+            if (intentionallyCancelled) {
+              if (finalCancellation?.turnId === turnId) {
+                yield* Deferred.await(finalCancellation.completion).pipe(Effect.result);
+              }
+              return yield* Effect.interrupt;
+            }
+
+            return {
+              threadId: input.threadId,
+              turnId,
+              ...(context.session.resumeCursor !== undefined
+                ? { resumeCursor: context.session.resumeCursor }
+                : {}),
+            };
+          }
+
+          const messageId = yield* makeOpenCodeMessageId();
           const turnId = steeringTurnId ?? freshTurnId;
           const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
           const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
