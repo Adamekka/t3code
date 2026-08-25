@@ -1152,6 +1152,57 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("+new");
   });
 
+  it("shows one titled Edit row for each file in an OpenCode apply_patch call", () => {
+    const firstPatch =
+      "--- /workspace/src/first.ts\n+++ /workspace/src/first.ts\n@@ -1 +1 @@\n-old first\n+new first\n";
+    const secondPatch =
+      "--- /workspace/src/second.ts\n+++ /workspace/src/second.ts\n@@ -1 +1 @@\n-old second\n+new second\n";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-edit-first",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-edit-first",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Edit",
+              toolTitle: "Edit",
+              tone: "tool",
+              itemType: "file_change",
+              changedFiles: ["src/first.ts"],
+              editDiff: { path: "src/first.ts", patch: firstPatch },
+            },
+          },
+          {
+            id: "entry-edit-second",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:29.000Z",
+            entry: {
+              id: "work-edit-second",
+              createdAt: "2026-03-17T19:12:29.000Z",
+              label: "Edit",
+              toolTitle: "Edit",
+              tone: "tool",
+              itemType: "file_change",
+              changedFiles: ["src/second.ts"],
+              editDiff: { path: "src/second.ts", patch: secondPatch },
+            },
+          },
+        ]}
+        workspaceRoot="/workspace"
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Edit - workspace/src/first.ts"');
+    expect(markup).toContain('aria-label="Edit - workspace/src/second.ts"');
+    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(2);
+    expect(markup).not.toContain("-old first");
+    expect(markup).not.toContain("-old second");
+  });
+
   it("shows Skill names while keeping Markdown out of the compact row", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
