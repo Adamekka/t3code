@@ -6797,6 +6797,8 @@ function ChatViewContent(props: ChatViewProps) {
         model={agentPanelModel}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
+        provider={selectedProvider}
+        cwd={activeWorkspaceRoot}
       />
     ) : activeRightPanelSurface?.kind === "todos" ? (
       <TodosPanel items={latestTodoItems} />
