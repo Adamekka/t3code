@@ -1601,6 +1601,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProviderSlashCommands = selectedProviderStatus
     ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
     : [];
+  const supportsCompaction = selectedProviderSlashCommands.some(
+    (command) => command.name === "compact",
+  );
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -5406,9 +5409,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       compactDisabled || noProviderAvailable || isSendBusy || isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
-                    {...(selectedProvider === "claudeAgent"
-                      ? { onCompactContext: compactThreadContext }
-                      : {})}
+                    {...(supportsCompaction ? { onCompactContext: compactThreadContext } : {})}
                   />
                 </div>
               </div>

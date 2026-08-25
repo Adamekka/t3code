@@ -102,6 +102,10 @@ The runtime and credentials stay on that environment, even when you use a phone 
 browser. See [Antigravity setup](./providers-antigravity.md) for Google sign-in, remote callback
 steps, and supported hosts.
 
+OpenCode threads support context compaction. Select **Compact context** from the context meter on
+web or desktop, or enter `/compact` in the message composer on any client. OpenCode summarizes the
+conversation and continues with a smaller context.
+
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.
 
