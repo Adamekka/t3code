@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ThreadId } from "./baseSchemas.ts";
+import { RuntimeTaskId, ThreadId } from "./baseSchemas.ts";
 import {
+  PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE,
+  PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS,
   ProviderEvent,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
+  ProviderTaskTranscriptError,
+  ProviderTaskTranscriptInput,
+  ProviderTaskTranscriptPage,
   ProviderUploadFeedbackError,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
@@ -18,6 +23,8 @@ const decodeProviderSession = Schema.decodeUnknownSync(ProviderSession);
 const decodeProviderEvent = Schema.decodeUnknownSync(ProviderEvent);
 const decodeProviderUploadFeedbackInput = Schema.decodeUnknownSync(ProviderUploadFeedbackInput);
 const decodeProviderUploadFeedbackResult = Schema.decodeUnknownSync(ProviderUploadFeedbackResult);
+const decodeProviderTaskTranscriptInput = Schema.decodeUnknownSync(ProviderTaskTranscriptInput);
+const decodeProviderTaskTranscriptPage = Schema.decodeUnknownSync(ProviderTaskTranscriptPage);
 
 function getOptionValue(
   options: ReadonlyArray<{ id: string; value: unknown }> | undefined,
@@ -189,6 +196,115 @@ describe("provider feedback", () => {
     expect(error.cause).toBe(cause);
     expect(error.message).toBe("Failed to upload feedback for thread thread-1.");
     expect(error.message).not.toContain("provider request secret");
+  });
+});
+
+describe("provider task transcript", () => {
+  it("decodes initial and paginated requests", () => {
+    expect(
+      decodeProviderTaskTranscriptInput({
+        threadId: "thread-1",
+        taskId: RuntimeTaskId.make("task-1"),
+        cursor: null,
+      }),
+    ).toEqual({ threadId: "thread-1", taskId: "task-1", cursor: null });
+    expect(
+      decodeProviderTaskTranscriptInput({
+        threadId: "thread-1",
+        taskId: RuntimeTaskId.make("task-1"),
+        cursor: "message-before-50",
+      }).cursor,
+    ).toBe("message-before-50");
+    expect(() =>
+      decodeProviderTaskTranscriptInput({ threadId: "thread-1", taskId: "", cursor: null }),
+    ).toThrow();
+    expect(() =>
+      decodeProviderTaskTranscriptInput({ threadId: "thread-1", taskId: "task-1", cursor: "" }),
+    ).toThrow();
+  });
+
+  it("keeps normalized message parts and pagination on the wire", () => {
+    const page = decodeProviderTaskTranscriptPage({
+      provider: "opencode",
+      taskId: "task-1",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          createdAt: "2026-08-25T12:00:00.000Z",
+          parts: [
+            { id: "part-text-1", type: "text", text: "Finished.", truncated: false },
+            {
+              id: "part-tool-1",
+              type: "tool",
+              toolCallId: "call-1",
+              name: "read",
+              status: "completed",
+              input: '{"filePath":"README.md"}',
+              output: "Contents",
+              inputTruncated: false,
+              outputTruncated: false,
+              errorTruncated: false,
+            },
+          ],
+        },
+      ],
+      nextCursor: "message-before-1",
+    });
+
+    expect(page.messages[0]?.parts.map((part) => part.type)).toEqual(["text", "tool"]);
+    expect(page.nextCursor).toBe("message-before-1");
+  });
+
+  it("rejects oversized transcript pages and content", () => {
+    expect(() =>
+      decodeProviderTaskTranscriptPage({
+        provider: "opencode",
+        taskId: "task-1",
+        messages: Array.from({ length: PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE + 1 }, (_, index) => ({
+          id: `message-${index}`,
+          role: "assistant",
+          parts: [],
+        })),
+        nextCursor: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeProviderTaskTranscriptPage({
+        provider: "opencode",
+        taskId: "task-1",
+        messages: [
+          {
+            id: "message-1",
+            role: "assistant",
+            parts: [
+              {
+                id: "part-1",
+                type: "text",
+                text: "x".repeat(PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS + 1),
+                truncated: false,
+              },
+            ],
+          },
+        ],
+        nextCursor: null,
+      }),
+    ).toThrow();
+  });
+
+  it("uses stable messages without exposing provider failure details", () => {
+    for (const [reason, message] of [
+      ["unsupported", "This provider does not support subagent transcripts."],
+      ["not-found", "This subagent transcript was not found in the thread."],
+      ["unavailable", "This subagent transcript is no longer available from the provider."],
+    ] as const) {
+      const error = new ProviderTaskTranscriptError({
+        threadId: ThreadId.make("thread-1"),
+        taskId: RuntimeTaskId.make("task-1"),
+        reason,
+      });
+      expect(error.message).toBe(message);
+    }
   });
 });
 

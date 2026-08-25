@@ -23,6 +23,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -56,7 +57,10 @@ import {
   ProviderValidationError,
   type ProviderAdapterError,
 } from "../Errors.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import type {
+  ProviderAdapterShape,
+  ProviderTaskTranscriptReadInput,
+} from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.ts";
@@ -85,9 +89,11 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const codexInstanceId = ProviderInstanceId.make("codex");
 const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
+const openCodeInstanceId = ProviderInstanceId.make("opencode");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+const OPENCODE_DRIVER = ProviderDriverKind.make("opencode");
 
 const assistantQuoteText = 'Keep the shared parser for "résumé".\nPreserve line breaks.';
 const assistantCitation = {
@@ -235,6 +241,15 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.succeed({ feedbackId: `feedback-${input.threadId}` }),
   );
 
+  const readTaskTranscript = vi.fn((input: ProviderTaskTranscriptReadInput) =>
+    Effect.succeed({
+      provider,
+      taskId: input.taskId,
+      messages: [],
+      nextCursor: null,
+    }),
+  );
+
   const stopAll = vi.fn(
     (): Effect.Effect<void, ProviderAdapterError> =>
       Effect.sync(() => {
@@ -248,6 +263,10 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       sessionModelSwitch: "in-session",
       ...(provider === CODEX_DRIVER ? { promptlessTurnContinuation: true } : {}),
     },
+    taskTranscript:
+      provider === OPENCODE_DRIVER
+        ? { kind: "supported", read: readTaskTranscript }
+        : { kind: "unsupported" },
     startSession,
     sendTurn,
     interruptTurn,
@@ -295,6 +314,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     readThread,
     rollbackThread,
     uploadFeedback,
+    readTaskTranscript,
     stopAll,
   };
 }
@@ -321,10 +341,12 @@ function makeProviderServiceLayer(
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
   const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
+  const opencode = makeFakeCodexAdapter(OPENCODE_DRIVER);
   const registry = makeAdapterRegistryMock({
     [ProviderDriverKind.make("codex")]: codex.adapter,
     [ProviderDriverKind.make("claudeAgent")]: claude.adapter,
     [ProviderDriverKind.make("cursor")]: cursor.adapter,
+    [ProviderDriverKind.make("opencode")]: opencode.adapter,
   });
 
   const providerAdapterLayer = Layer.succeed(
@@ -365,6 +387,7 @@ function makeProviderServiceLayer(
     codex,
     claude,
     cursor,
+    opencode,
     layer,
   };
 }
@@ -1181,6 +1204,86 @@ routing.layer("ProviderServiceLive routing", (it) => {
       assert.instanceOf(error, ProviderValidationError);
       assert.include(error.issue, "does not support feedback uploads");
       assert.strictEqual(routing.claude.startSession.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect(
+    "reads a stopped OpenCode task transcript without recovering the provider session",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("thread-task-transcript-route");
+        const taskId = RuntimeTaskId.make("task-transcript-route");
+        const session = yield* provider.startSession(threadId, {
+          provider: OPENCODE_DRIVER,
+          providerInstanceId: openCodeInstanceId,
+          threadId,
+          cwd: "/tmp/task-transcript-project",
+          runtimeMode: "full-access",
+        });
+        yield* routing.opencode.stopSession(threadId);
+        routing.opencode.startSession.mockClear();
+        routing.opencode.readTaskTranscript.mockClear();
+
+        const page = yield* provider.readTaskTranscript({ threadId, taskId, cursor: null });
+
+        assert.equal(page.provider, OPENCODE_DRIVER);
+        assert.equal(routing.opencode.startSession.mock.calls.length, 0);
+        assert.deepStrictEqual(routing.opencode.readTaskTranscript.mock.calls, [
+          [
+            {
+              threadId,
+              taskId,
+              cursor: null,
+              parentResumeCursor: session.resumeCursor,
+              cwd: "/tmp/task-transcript-project",
+            },
+          ],
+        ]);
+      }),
+  );
+
+  it.effect("rejects unsupported task transcripts without restarting the provider", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-task-transcript-unsupported");
+      const taskId = RuntimeTaskId.make("task-transcript-unsupported");
+      yield* provider.startSession(threadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* routing.claude.stopSession(threadId);
+      routing.claude.startSession.mockClear();
+
+      const error = yield* provider
+        .readTaskTranscript({ threadId, taskId, cursor: null })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "ProviderTaskTranscriptError");
+      if (error._tag === "ProviderTaskTranscriptError") {
+        assert.equal(error.reason, "unsupported");
+      }
+      assert.equal(routing.claude.startSession.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect("returns unavailable when a transcript thread has no provider binding", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const error = yield* provider
+        .readTaskTranscript({
+          threadId: asThreadId("thread-task-transcript-missing"),
+          taskId: RuntimeTaskId.make("task-transcript-missing"),
+          cursor: null,
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "ProviderTaskTranscriptError");
+      if (error._tag === "ProviderTaskTranscriptError") {
+        assert.equal(error.reason, "unavailable");
+      }
     }),
   );
 
