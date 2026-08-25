@@ -1463,6 +1463,22 @@ export function makeOpenCodeAdapter(
           break;
         }
 
+        case "session.compacted": {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "thread.state.changed",
+            payload: {
+              state: "compacted",
+              detail: event,
+            },
+          });
+          break;
+        }
+
         case "message.updated": {
           const info = event.properties.info;
           context.messageRoleById.set(info.id, info.role);
@@ -2222,13 +2238,30 @@ export function makeOpenCodeAdapter(
           issue: "OpenCode turns require text input or at least one attachment.",
         });
       }
+      const isCompaction = text === "/compact";
+      if (isCompaction && fileParts.length > 0) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "sendTurn",
+          issue: "OpenCode compaction cannot include attachments.",
+        });
+      }
+      if (isCompaction && steeringTurnId !== undefined) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "sendTurn",
+          issue: "OpenCode compaction requires an idle session.",
+        });
+      }
 
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
 
       context.activeTurnId = turnId;
-      context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
-      context.activeVariant = variant;
+      context.activeAgent = isCompaction
+        ? undefined
+        : (agent ?? (input.interactionMode === "plan" ? "plan" : undefined));
+      context.activeVariant = isCompaction ? undefined : variant;
       yield* updateProviderSession(
         context,
         {
@@ -2250,17 +2283,27 @@ export function makeOpenCodeAdapter(
         });
       }
 
-      yield* runOpenCodeSdk("session.promptAsync", () =>
-        context.client.session.promptAsync({
-          sessionID: context.openCodeSessionId,
-          model: parsedModel,
-          ...(context.activeAgent ? { agent: context.activeAgent } : {}),
-          ...(context.activeVariant ? { variant: context.activeVariant } : {}),
-          parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
-        }),
-      ).pipe(
+      const request = isCompaction
+        ? runOpenCodeSdk("session.summarize", () =>
+            context.client.session.summarize({
+              sessionID: context.openCodeSessionId,
+              providerID: parsedModel.providerID,
+              modelID: parsedModel.modelID,
+              auto: false,
+            }),
+          ).pipe(Effect.asVoid)
+        : runOpenCodeSdk("session.promptAsync", () =>
+            context.client.session.promptAsync({
+              sessionID: context.openCodeSessionId,
+              model: parsedModel,
+              ...(context.activeAgent ? { agent: context.activeAgent } : {}),
+              ...(context.activeVariant ? { variant: context.activeVariant } : {}),
+              parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
+            }),
+          ).pipe(Effect.asVoid);
+      yield* request.pipe(
         Effect.mapError(toRequestError),
-        // On failure of a fresh turn: clear active-turn state, flip the
+        // On failure of a fresh request: clear active-turn state, flip the
         // session back to ready with lastError set, emit turn.aborted, then
         // let the typed error propagate. We don't need to rebuild the error
         // here — `toRequestError` already produced the right shape. A failed
