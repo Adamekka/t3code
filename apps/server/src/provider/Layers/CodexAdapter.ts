@@ -2002,6 +2002,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
     },
+    taskTranscript: { kind: "unsupported" },
     startSession,
     sendTurn,
     interruptTurn,

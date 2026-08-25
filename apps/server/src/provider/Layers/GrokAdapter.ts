@@ -2027,6 +2027,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
     return {
       provider: PROVIDER,
       capabilities: { sessionModelSwitch: "in-session" },
+      taskTranscript: { kind: "unsupported" },
       startSession,
       sendTurn,
       interruptTurn,
