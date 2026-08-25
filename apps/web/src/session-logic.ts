@@ -133,6 +133,7 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   sourceActivityKind: OrchestrationThreadActivity["kind"];
   [workLogCollapseKey]?: string;
   toolCallId?: string;
+  applyPatchEdits?: ReadonlyArray<WorkLogEditDiff>;
   isWorkflowCoordinator?: boolean;
   /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn CTAs. */
   isBackgroundTask?: boolean;
@@ -963,7 +964,29 @@ export function deriveWorkLogEntries(
     if (isAgentInternalActivity(activity)) continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
-  return collapseDerivedWorkLogEntries(entries);
+  const collapsed = collapseDerivedWorkLogEntries(entries);
+  const visibleEntries: WorkLogEntry[] = [];
+  for (const entry of collapsed) {
+    if (entry.toolLifecycleStatus !== "completed" || !entry.applyPatchEdits) {
+      visibleEntries.push(entry);
+      continue;
+    }
+    entry.applyPatchEdits.forEach((edit, index) => {
+      const visibleEntry: DerivedWorkLogEntry = {
+        ...entry,
+        id: `${entry.id}:edit:${index}`,
+        label: "Edit",
+        toolTitle: "Edit",
+        changedFiles: [edit.path],
+        editDiff: edit,
+      };
+      // The provider output summarizes the whole call; each child row owns only its file diff.
+      delete visibleEntry.detail;
+      delete visibleEntry.applyPatchEdits;
+      visibleEntries.push(visibleEntry);
+    });
+  }
+  return visibleEntries;
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
@@ -1054,6 +1077,22 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     typeof rawEditDiff?.patch === "string" && rawEditDiff.patch.trim().length > 0
       ? rawEditDiff.patch
       : null;
+  const applyPatchEdits: WorkLogEditDiff[] = [];
+  if (data?.kind === "apply_patch" && Array.isArray(data.edits) && data.edits.length > 0) {
+    for (const rawApplyPatchEdit of data.edits) {
+      const applyPatchEdit = asRecord(rawApplyPatchEdit);
+      const path = asTrimmedString(applyPatchEdit?.path);
+      const patch =
+        typeof applyPatchEdit?.patch === "string" && applyPatchEdit.patch.trim().length > 0
+          ? applyPatchEdit.patch
+          : null;
+      if (!path || !patch) {
+        applyPatchEdits.length = 0;
+        break;
+      }
+      applyPatchEdits.push({ path, patch });
+    }
+  }
   const globPattern = asTrimmedString(data?.pattern);
   const skillName = data?.kind === "skill" ? asTrimmedString(data.name) : null;
   const skillDetailIsMarkdown = data?.kind === "skill" && data.detailFormat === "markdown";
@@ -1160,6 +1199,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (editDiffPath && editDiffPatch) {
     entry.editDiff = { path: editDiffPath, patch: editDiffPatch };
+  }
+  if (applyPatchEdits.length > 0) {
+    entry.applyPatchEdits = applyPatchEdits;
   }
   if (skillName) {
     entry.skillName = skillName;

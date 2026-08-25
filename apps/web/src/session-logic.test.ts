@@ -1686,6 +1686,97 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.editDiff).toEqual({ path: "/workspace/src/index.ts", patch });
   });
 
+  it("keeps an in-progress OpenCode apply_patch as one generic entry", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "apply-patch-running",
+        kind: "tool.updated",
+        summary: "apply_patch",
+        turnId: "turn-apply-patch",
+        payload: {
+          itemType: "file_change",
+          toolCallId: "call-apply-patch",
+          status: "inProgress",
+          detail: "Applying patch",
+          data: { kind: "apply_patch" },
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "apply-patch-running",
+      label: "apply_patch",
+      detail: "Applying patch",
+      toolCallId: "call-apply-patch",
+      toolLifecycleStatus: "inProgress",
+    });
+  });
+
+  it("splits a completed OpenCode apply_patch lifecycle into one Edit entry per file", () => {
+    const firstPatch =
+      "--- /workspace/src/first.ts\n+++ /workspace/src/first.ts\n@@ -1 +1 @@\n-old first\n+new first\n";
+    const secondPatch =
+      "--- /workspace/src/second.ts\n+++ /workspace/src/second.ts\n@@ -1 +1 @@\n-old second\n+new second\n";
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "apply-patch-running",
+        kind: "tool.updated",
+        summary: "apply_patch",
+        turnId: "turn-apply-patch",
+        sequence: 1,
+        payload: {
+          itemType: "file_change",
+          toolCallId: "call-apply-patch",
+          status: "inProgress",
+          detail: "Applying patch",
+          data: { kind: "apply_patch" },
+        },
+      }),
+      makeActivity({
+        id: "apply-patch-completed",
+        kind: "tool.completed",
+        summary: "apply_patch",
+        turnId: "turn-apply-patch",
+        sequence: 2,
+        payload: {
+          itemType: "file_change",
+          toolCallId: "call-apply-patch",
+          status: "completed",
+          data: {
+            kind: "apply_patch",
+            files: [{ path: "src/first.ts" }, { path: "src/second.ts" }],
+            edits: [
+              { path: "src/first.ts", patch: firstPatch },
+              { path: "src/second.ts", patch: secondPatch },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      id: "apply-patch-completed:edit:0",
+      label: "Edit",
+      toolTitle: "Edit",
+      toolCallId: "call-apply-patch",
+      toolLifecycleStatus: "completed",
+      changedFiles: ["src/first.ts"],
+      editDiff: { path: "src/first.ts", patch: firstPatch },
+    });
+    expect(entries[1]).toMatchObject({
+      id: "apply-patch-completed:edit:1",
+      label: "Edit",
+      toolTitle: "Edit",
+      toolCallId: "call-apply-patch",
+      toolLifecycleStatus: "completed",
+      changedFiles: ["src/second.ts"],
+      editDiff: { path: "src/second.ts", patch: secondPatch },
+    });
+    expect(entries.every((entry) => entry.detail === undefined)).toBe(true);
+  });
+
   it("extracts normalized Skill presentation data", () => {
     const [entry] = deriveWorkLogEntries([
       makeActivity({
