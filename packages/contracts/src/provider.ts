@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { RuntimeTaskId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ApprovalRequestId,
   EventId,
@@ -133,6 +133,105 @@ export class ProviderUploadFeedbackError extends Schema.TaggedErrorClass<Provide
 ) {
   override get message(): string {
     return `Failed to upload feedback for thread ${this.threadId}.`;
+  }
+}
+
+export const PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE = 50;
+export const PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS = 50_000;
+
+const ProviderTaskTranscriptContent = Schema.String.check(
+  Schema.isMaxLength(PROVIDER_TASK_TRANSCRIPT_PART_MAX_CHARS),
+);
+
+export const ProviderTaskTranscriptTextPart = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  type: Schema.Literal("text"),
+  text: ProviderTaskTranscriptContent,
+  truncated: Schema.Boolean,
+});
+export type ProviderTaskTranscriptTextPart = typeof ProviderTaskTranscriptTextPart.Type;
+
+export const ProviderTaskTranscriptReasoningPart = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  type: Schema.Literal("reasoning"),
+  text: ProviderTaskTranscriptContent,
+  truncated: Schema.Boolean,
+});
+export type ProviderTaskTranscriptReasoningPart = typeof ProviderTaskTranscriptReasoningPart.Type;
+
+export const ProviderTaskTranscriptToolPart = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  type: Schema.Literal("tool"),
+  toolCallId: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  status: Schema.Literals(["pending", "running", "completed", "failed"]),
+  input: Schema.optional(ProviderTaskTranscriptContent),
+  output: Schema.optional(ProviderTaskTranscriptContent),
+  error: Schema.optional(ProviderTaskTranscriptContent),
+  inputTruncated: Schema.Boolean,
+  outputTruncated: Schema.Boolean,
+  errorTruncated: Schema.Boolean,
+});
+export type ProviderTaskTranscriptToolPart = typeof ProviderTaskTranscriptToolPart.Type;
+
+export const ProviderTaskTranscriptNoticePart = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  type: Schema.Literal("notice"),
+  label: TrimmedNonEmptyString,
+  detail: Schema.optional(ProviderTaskTranscriptContent),
+  truncated: Schema.Boolean,
+});
+export type ProviderTaskTranscriptNoticePart = typeof ProviderTaskTranscriptNoticePart.Type;
+
+export const ProviderTaskTranscriptPart = Schema.Union([
+  ProviderTaskTranscriptTextPart,
+  ProviderTaskTranscriptReasoningPart,
+  ProviderTaskTranscriptToolPart,
+  ProviderTaskTranscriptNoticePart,
+]);
+export type ProviderTaskTranscriptPart = typeof ProviderTaskTranscriptPart.Type;
+
+export const ProviderTaskTranscriptMessage = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  role: Schema.Literals(["user", "assistant"]),
+  createdAt: Schema.optional(IsoDateTime),
+  parts: Schema.Array(ProviderTaskTranscriptPart),
+});
+export type ProviderTaskTranscriptMessage = typeof ProviderTaskTranscriptMessage.Type;
+
+export const ProviderTaskTranscriptInput = Schema.Struct({
+  threadId: ThreadId,
+  taskId: RuntimeTaskId,
+  cursor: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ProviderTaskTranscriptInput = typeof ProviderTaskTranscriptInput.Type;
+
+export const ProviderTaskTranscriptPage = Schema.Struct({
+  provider: ProviderDriverKind,
+  taskId: RuntimeTaskId,
+  messages: Schema.Array(ProviderTaskTranscriptMessage).check(
+    Schema.isMaxLength(PROVIDER_TASK_TRANSCRIPT_PAGE_SIZE),
+  ),
+  nextCursor: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ProviderTaskTranscriptPage = typeof ProviderTaskTranscriptPage.Type;
+
+const PROVIDER_TASK_TRANSCRIPT_ERROR_MESSAGES = {
+  unsupported: "This provider does not support subagent transcripts.",
+  "not-found": "This subagent transcript was not found in the thread.",
+  unavailable: "This subagent transcript is no longer available from the provider.",
+} as const;
+
+export class ProviderTaskTranscriptError extends Schema.TaggedErrorClass<ProviderTaskTranscriptError>()(
+  "ProviderTaskTranscriptError",
+  {
+    threadId: ThreadId,
+    taskId: RuntimeTaskId,
+    reason: Schema.Literals(["unsupported", "not-found", "unavailable"]),
+  },
+) {
+  override get message(): string {
+    return PROVIDER_TASK_TRANSCRIPT_ERROR_MESSAGES[this.reason];
   }
 }
 
