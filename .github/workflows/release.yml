@@ -3,7 +3,7 @@ name: Nightly
 on:
   schedule:
     # Off minute zero: GitHub delays scheduled runs most at the top of the hour.
-    - cron: "38 */3 * * *"
+    - cron: "38 0 * * *"
   workflow_dispatch:
 
 permissions:
