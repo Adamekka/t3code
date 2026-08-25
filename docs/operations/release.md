@@ -11,7 +11,7 @@ The release workflow is `.github/workflows/release.yml`.
 
 It runs in two cases:
 
-- Every three hours. A scheduled run stops when `main` still points at the commit tagged by the most
+- Daily. A scheduled run stops when `main` still points at the commit tagged by the most
   recent nightly release.
 - Manual `workflow_dispatch`. Manual runs always proceed, which allows a failed release to be retried.
 
