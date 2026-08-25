@@ -3,20 +3,22 @@ import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
   formatContextWindowCompactionMessage,
-  hasAvailableClaudeCompactionProvider,
+  hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
   shouldOfferResumeCompaction,
 } from "./ContextWindowMeter.logic";
 
-function claudeProvider(input: {
+function compactionProvider(input: {
   instanceId: string;
   continuationGroupKey: string;
+  driverKind?: "claudeAgent" | "opencode";
   enabled?: boolean;
+  supportsCompaction?: boolean;
 }): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
-    driver: ProviderDriverKind.make("claudeAgent"),
+    driver: ProviderDriverKind.make(input.driverKind ?? "claudeAgent"),
     continuation: { groupKey: input.continuationGroupKey },
     enabled: input.enabled ?? true,
     installed: true,
@@ -25,30 +27,40 @@ function claudeProvider(input: {
     auth: { status: "authenticated" },
     checkedAt: "2026-08-24T12:00:00.000Z",
     models: [],
-    slashCommands: [],
+    slashCommands:
+      input.supportsCompaction === false
+        ? []
+        : [
+            {
+              name: "compact",
+              description: "Summarize the conversation and reduce context usage",
+            },
+          ],
     skills: [],
   };
 }
 
-describe("hasAvailableClaudeCompactionProvider", () => {
+describe("hasAvailableCompactionProvider", () => {
   const originalInstanceId = ProviderInstanceId.make("claude_original");
 
   it("rejects a fallback in a different locked continuation group", () => {
     const providers = deriveProviderInstanceEntries([
-      claudeProvider({
+      compactionProvider({
         instanceId: originalInstanceId,
         continuationGroupKey: "claude:home:/original",
         enabled: false,
+        supportsCompaction: false,
       }),
-      claudeProvider({
+      compactionProvider({
         instanceId: "claude_other",
         continuationGroupKey: "claude:home:/other",
       }),
     ]);
 
     expect(
-      hasAvailableClaudeCompactionProvider({
+      hasAvailableCompactionProvider({
         providers,
+        driverKind: ProviderDriverKind.make("claudeAgent"),
         instanceId: originalInstanceId,
         lockedInstanceId: originalInstanceId,
       }),
@@ -57,24 +69,71 @@ describe("hasAvailableClaudeCompactionProvider", () => {
 
   it("accepts an enabled fallback in the locked continuation group", () => {
     const providers = deriveProviderInstanceEntries([
-      claudeProvider({
+      compactionProvider({
         instanceId: originalInstanceId,
         continuationGroupKey: "claude:home:/original",
         enabled: false,
       }),
-      claudeProvider({
+      compactionProvider({
         instanceId: "claude_fallback",
         continuationGroupKey: "claude:home:/original",
       }),
     ]);
 
     expect(
-      hasAvailableClaudeCompactionProvider({
+      hasAvailableCompactionProvider({
         providers,
+        driverKind: ProviderDriverKind.make("claudeAgent"),
         instanceId: originalInstanceId,
         lockedInstanceId: originalInstanceId,
       }),
     ).toBe(true);
+  });
+
+  it("accepts an available OpenCode instance that advertises compaction", () => {
+    const instanceId = ProviderInstanceId.make("opencode");
+    const providers = deriveProviderInstanceEntries([
+      compactionProvider({
+        instanceId,
+        continuationGroupKey: "opencode:default",
+        driverKind: "opencode",
+      }),
+    ]);
+
+    expect(
+      hasAvailableCompactionProvider({
+        providers,
+        driverKind: ProviderDriverKind.make("opencode"),
+        instanceId,
+        lockedInstanceId: instanceId,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not bypass a selected provider that lacks compaction", () => {
+    const instanceId = ProviderInstanceId.make("opencode");
+    const providers = deriveProviderInstanceEntries([
+      compactionProvider({
+        instanceId,
+        continuationGroupKey: "opencode:default",
+        driverKind: "opencode",
+        supportsCompaction: false,
+      }),
+      compactionProvider({
+        instanceId: "opencode_fallback",
+        continuationGroupKey: "opencode:default",
+        driverKind: "opencode",
+      }),
+    ]);
+
+    expect(
+      hasAvailableCompactionProvider({
+        providers,
+        driverKind: ProviderDriverKind.make("opencode"),
+        instanceId,
+        lockedInstanceId: instanceId,
+      }),
+    ).toBe(false);
   });
 });
 
