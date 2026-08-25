@@ -372,6 +372,92 @@ describe("projectActivityPayload", () => {
     });
   });
 
+  it("retains OpenCode apply_patch's per-file paths and patches", () => {
+    const firstPatch =
+      "--- /workspace/src/first.ts\n+++ /workspace/src/first.ts\n@@ -1 +1 @@\n-old first\n+new first\n";
+    const secondPatch =
+      "--- /workspace/src/second.ts\n+++ /workspace/src/renamed.ts\n@@ -1 +1 @@\n-old second\n+new second\n";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "completed",
+        detail: "Success. Updated the following files:\nM src/first.ts\nM src/renamed.ts",
+        data: {
+          tool: "apply_patch",
+          state: {
+            status: "completed",
+            input: { patchText: "*** Begin Patch\n...\n*** End Patch" },
+            output: "Success. Updated the following files:\nM src/first.ts\nM src/renamed.ts",
+            metadata: {
+              diff: `${firstPatch}\n${secondPatch}`,
+              diagnostics: { "/workspace/src/first.ts": [] },
+              files: [
+                {
+                  filePath: "/workspace/src/first.ts",
+                  relativePath: "src/first.ts",
+                  type: "update",
+                  patch: firstPatch,
+                  additions: 1,
+                  deletions: 1,
+                },
+                {
+                  filePath: "/workspace/src/second.ts",
+                  relativePath: "src/renamed.ts",
+                  movePath: "/workspace/src/renamed.ts",
+                  type: "move",
+                  patch: secondPatch,
+                  additions: 1,
+                  deletions: 1,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(
+      "Success. Updated the following files:\nM src/first.ts\nM src/renamed.ts",
+    );
+    expect((projected.payload as Record<string, unknown>).data).toEqual({
+      kind: "apply_patch",
+      files: [{ path: "src/first.ts" }, { path: "src/renamed.ts" }],
+      edits: [
+        { path: "src/first.ts", patch: firstPatch },
+        { path: "src/renamed.ts", patch: secondPatch },
+      ],
+    });
+    expect(projectActivityPayload(projected)).toEqual(projected);
+  });
+
+  it("keeps the generic OpenCode apply_patch row when per-file metadata is incomplete", () => {
+    const detail = "Success. Updated the following files:\nM src/first.ts\nM src/second.ts";
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        status: "completed",
+        detail,
+        data: {
+          tool: "apply_patch",
+          state: {
+            status: "completed",
+            input: { patchText: "*** Begin Patch\n...\n*** End Patch" },
+            output: detail,
+            metadata: {
+              files: [
+                { relativePath: "src/first.ts", patch: "--- first\n+++ first\n" },
+                { relativePath: "src/second.ts" },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    expect((projected.payload as Record<string, unknown>).detail).toBe(detail);
+    expect((projected.payload as Record<string, unknown>).data).toEqual({ kind: "apply_patch" });
+  });
+
   it("preserves failed OpenCode edit details", () => {
     const projected = projectActivityPayload(
       activity({
