@@ -271,6 +271,29 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
     }),
   );
 
+  it.effect("advertises native context compaction", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["openai"],
+          all: [],
+          default: {},
+        },
+        agents: [],
+        skills: [],
+      };
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.deepEqual(snapshot.slashCommands, [
+        {
+          name: "compact",
+          description: "Summarize the conversation and reduce context usage",
+        },
+      ]);
+    }),
+  );
+
   it.effect("includes OpenCode skills in the provider snapshot", () =>
     Effect.gen(function* () {
       runtimeMock.state.inventory = {
