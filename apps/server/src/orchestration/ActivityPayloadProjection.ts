@@ -388,9 +388,12 @@ export function projectActivityPayload(
     data.kind === "glob" ||
     activity.summary.trim().toLowerCase() === "glob";
   const toolName = asTrimmedString(data.tool) ?? asTrimmedString(data.toolName);
-  const isOpenCodeEditActivity = toolName?.toLowerCase() === "edit";
-  const isOpenCodeWriteActivity = toolName?.toLowerCase() === "write";
-  const isOpenCodeGrepActivity = toolName?.toLowerCase() === "grep";
+  const normalizedToolName = toolName?.toLowerCase();
+  const isOpenCodeEditActivity = normalizedToolName === "edit";
+  const isOpenCodeApplyPatchActivity =
+    normalizedToolName === "apply_patch" || data.kind === "apply_patch";
+  const isOpenCodeWriteActivity = normalizedToolName === "write";
+  const isOpenCodeGrepActivity = normalizedToolName === "grep";
   // Historical projected rows may retain only the generic activity summary and detail.
   const isOpenCodeSkillActivity =
     toolName?.toLowerCase() === "skill" ||
@@ -430,6 +433,33 @@ export function projectActivityPayload(
     isOpenCodeEditActivity && statusProjectedPayload.status === "completed"
       ? (metadataEditPatch ?? fileEditPatch)
       : null;
+  const applyPatchEdits: Array<{ path: string; patch: string }> = [];
+  if (isOpenCodeApplyPatchActivity && statusProjectedPayload.status === "completed") {
+    const metadataFiles = asRecord(state?.metadata)?.files;
+    const rawEdits = Array.isArray(metadataFiles)
+      ? metadataFiles
+      : data.kind === "apply_patch" && Array.isArray(data.edits)
+        ? data.edits
+        : null;
+    if (rawEdits && rawEdits.length > 0) {
+      for (const rawEdit of rawEdits) {
+        const edit = asRecord(rawEdit);
+        const path =
+          asTrimmedString(edit?.relativePath) ??
+          asTrimmedString(edit?.movePath) ??
+          asTrimmedString(edit?.filePath) ??
+          asTrimmedString(edit?.path);
+        const patch =
+          typeof edit?.patch === "string" && edit.patch.trim().length > 0 ? edit.patch : null;
+        if (!path || !patch) {
+          // A partial split would hide files from a successful provider call.
+          applyPatchEdits.length = 0;
+          break;
+        }
+        applyPatchEdits.push({ path, patch });
+      }
+    }
+  }
   const writeInputPath =
     isOpenCodeWriteActivity && typeof input?.filePath === "string" ? input.filePath.trim() : "";
   const writeContent =
@@ -557,6 +587,9 @@ export function projectActivityPayload(
   if (writeInputPath) {
     pushChangedFile(changedFiles, seenChangedFiles, writeInputPath);
   }
+  for (const edit of applyPatchEdits) {
+    pushChangedFile(changedFiles, seenChangedFiles, edit.path);
+  }
   collectChangedFiles(data, changedFiles, seenChangedFiles, 0);
   if (changedFiles.length > 0) {
     // Both clients discover file names by walking objects with path-like keys.
@@ -577,6 +610,8 @@ export function projectActivityPayload(
     projectedData.kind = "skill";
   } else if (isOpenCodeTaskActivity) {
     projectedData.kind = "task";
+  } else if (isOpenCodeApplyPatchActivity) {
+    projectedData.kind = "apply_patch";
   } else if (isSearchActivity) {
     projectedData.kind = "search";
   } else if ("kind" in data) {
@@ -587,6 +622,9 @@ export function projectActivityPayload(
   }
   if (editInputPath && editPatch) {
     projectedData.edit = { path: editInputPath, patch: editPatch };
+  }
+  if (applyPatchEdits.length > 0) {
+    projectedData.edits = applyPatchEdits;
   }
   if (skillName) {
     projectedData.name = skillName;
