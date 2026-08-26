@@ -1,9 +1,10 @@
-# Nightly macOS releases
+# Nightly releases
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-This fork publishes one unsigned Apple Silicon DMG for installation through a Homebrew Cask. It does
-not publish stable releases or other T3 Code products.
+This fork publishes one unsigned Apple Silicon DMG through a Homebrew Cask and one x86_64 Linux Nix
+package through `Adamekka/nur-packages`. It does not publish stable releases or other T3 Code
+products.
 
 ## Workflow
 
@@ -24,9 +25,11 @@ Each release runs these stages in order:
 3. Run the release smoke test.
 4. Build the native resource monitor and an unsigned arm64 DMG on GitHub's `macos-15` runner.
 5. Publish the DMG in a GitHub prerelease.
+6. Update and publish the Homebrew Cask.
+7. Update and build the NUR package on an `ubuntu-24.04` runner, then push it to the NUR repository.
 
-The workflow does not build or publish Intel macOS, Windows, Linux, mobile, npm, AUR, the hosted web
-app, T3 Connect relay configuration, or Discord announcements.
+The workflow does not build or publish Intel macOS, Windows, mobile, npm, AUR, the hosted web app, T3
+Connect relay configuration, or Discord announcements.
 
 ## Versioning
 
@@ -47,17 +50,22 @@ update feed and creates only the DMG instead of also creating ZIP, YAML, and blo
 Homebrew is responsible for delivering later versions.
 
 The build is unsigned and not notarized, so users may need to right-click the app and choose **Open**
-on first launch. The workflow requires `HOMEBREW_TAP_TOKEN`, a fine-grained GitHub token with Contents
-write access only to `Adamekka/homebrew-tap`. It does not require Apple, Azure, Clerk, Cloudflare,
-Vercel, npm, or Discord secrets.
+on first launch. The workflow requires two fine-grained GitHub tokens with Contents write access:
+`HOMEBREW_TAP_TOKEN` for `Adamekka/homebrew-tap` and `NUR_PACKAGES_TOKEN` for
+`Adamekka/nur-packages`. It does not require Apple, Azure, Clerk, Cloudflare, Vercel, npm, or Discord
+secrets.
 
 After the DMG is published, the workflow checks out the tap, updates the Cask's version and SHA-256,
 and pushes the change to `main`. A tap checkout or push failure fails the release job so a stale Cask
 is visible. Users receive the new Cask through `brew update` and `brew upgrade --cask
 adamekka-t3-code`; Homebrew does not upgrade installed applications in the background by default.
 
+After the release job succeeds, a dependent Linux job checks out `Adamekka/nur-packages`, updates the
+Nix source and dependency hashes to the exact nightly version, and builds `.#t3code`. It pushes the
+package change to `main` only after that build succeeds.
+
 ## Manual release
 
 Run the **Nightly** workflow from the GitHub Actions page. A manual invocation publishes a real
 nightly prerelease even when the source commit already has another nightly tag. The same run updates
-the Homebrew Cask after publishing the release asset; no manual checksum edit is required.
+the Homebrew Cask and NUR package after publishing the release asset; no manual hash edit is required.
