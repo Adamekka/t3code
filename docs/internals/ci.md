@@ -25,4 +25,8 @@ packages one unsigned Apple Silicon DMG. The DMG has no Electron update feed bec
 updates for this distribution. After publishing the GitHub prerelease, the job updates the version
 and checksum in `Adamekka/homebrew-tap` and pushes the Cask change to its `main` branch.
 
-See [Nightly macOS releases](../operations/release.md) for triggers and release behavior.
+After the release job succeeds, a dependent `ubuntu-24.04` job updates the x86_64 Linux package in
+`Adamekka/nur-packages` to the resolved nightly version. It recalculates the source, pnpm, and Cargo
+hashes, builds the package, and pushes the change only after the build succeeds.
+
+See [Nightly releases](../operations/release.md) for triggers and release behavior.

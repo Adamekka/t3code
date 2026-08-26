@@ -163,6 +163,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.release_meta.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -173,13 +175,18 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
-      - name: Verify Homebrew tap token
+      - name: Verify downstream tokens
         shell: bash
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NUR_PACKAGES_TOKEN: ${{ secrets.NUR_PACKAGES_TOKEN }}
         run: |
           if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
             echo "HOMEBREW_TAP_TOKEN is required to publish nightly Cask updates." >&2
+            exit 1
+          fi
+          if [[ -z "$NUR_PACKAGES_TOKEN" ]]; then
+            echo "NUR_PACKAGES_TOKEN is required to publish nightly NUR updates." >&2
             exit 1
           fi
 
@@ -307,3 +314,57 @@ jobs:
           git -C homebrew-tap add -- Casks/adamekka-t3-code.rb
           git -C homebrew-tap commit -m "adamekka-t3-code: $CASK_VERSION"
           git -C homebrew-tap push origin HEAD:main
+
+  update_nur:
+    name: Update NUR package
+    needs: [release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout NUR packages
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: Adamekka/nur-packages
+          ref: main
+          token: ${{ secrets.NUR_PACKAGES_TOKEN }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Update and build NUR package
+        shell: bash
+        env:
+          NIX_CONFIG: |
+            fallback = true
+          T3CODE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$T3CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.[0-9]+$ ]]; then
+            echo "Invalid nightly version: $T3CODE_VERSION" >&2
+            exit 1
+          fi
+
+          nix run --inputs-from . nixpkgs#nix-update -- \
+            --flake \
+            --override-filename pkgs/t3code/default.nix \
+            --subpackage resourceMonitor \
+            --subpackage unwrapped \
+            --version "$T3CODE_VERSION" \
+            t3code
+          nix build --no-link .#t3code
+
+      - name: Publish NUR package update
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- pkgs/t3code/default.nix; then
+            exit 0
+          fi
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- pkgs/t3code/default.nix
+          git commit -m "Update t3code"
+          git push origin HEAD:main
