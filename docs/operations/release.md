@@ -20,13 +20,10 @@ A newer invocation cancels an older in-progress invocation so two nightlies cann
 
 Each release runs these stages in order:
 
-1. Check formatting and linting for the macOS app code.
-2. Typecheck and test the desktop app and its workspace dependency set.
-3. Run the release smoke test.
-4. Build the native resource monitor and an unsigned arm64 DMG on GitHub's `macos-15` runner.
-5. Publish the DMG in a GitHub prerelease.
-6. Update and publish the Homebrew Cask.
-7. Update and build the NUR package on an `ubuntu-24.04` runner, then push it to the NUR repository.
+1. Build the native resource monitor and an unsigned arm64 DMG on GitHub's `macos-15` runner.
+2. Publish the DMG in a GitHub prerelease.
+3. Update and publish the Homebrew Cask.
+4. Update and build the NUR package on an `ubuntu-24.04` runner, then push it to the NUR repository.
 
 The workflow does not build or publish Intel macOS, Windows, mobile, npm, AUR, the hosted web app, T3
 Connect relay configuration, or Discord announcements.
