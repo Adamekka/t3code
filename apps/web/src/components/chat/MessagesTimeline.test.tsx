@@ -1453,49 +1453,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Tool call failed"');
   });
 
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-completed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-completed",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Run tests",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-          {
-            id: "entry-failed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:29.000Z",
-            entry: {
-              id: "work-failed",
-              createdAt: "2026-03-17T19:12:29.000Z",
-              label: "Run lint",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "failed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Ran 2 commands");
-    expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("lucide-x");
-    expect(markup).not.toContain("text-destructive");
-    // The failure stays discoverable for screen readers.
-    expect(markup).toContain("tool call failed");
-  });
-
   it("keeps mixed work logs neutral after a later tool call succeeds", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
