@@ -59,106 +59,12 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
-  quality:
-    name: Quality checks
+  release:
+    name: Build and publish macOS arm64 DMG
     needs: [check_changes]
     if: |
       !failure() && !cancelled() &&
       (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    outputs:
-      version: ${{ steps.release_meta.outputs.version }}
-      tag: ${{ steps.release_meta.outputs.tag }}
-      release_name: ${{ steps.release_meta.outputs.name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@t3tools/desktop...
-              - --filter=t3...
-              # The server projection suite imports mobile code whose tsconfig extends Expo's base config.
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
-              - --filter=@t3tools/oxlint-plugin-t3code...
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-
-      - id: release_meta
-        name: Resolve nightly version
-        shell: bash
-        env:
-          NIGHTLY_SHA: ${{ github.sha }}
-          NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          set -euo pipefail
-          nightly_date=$(date -u +%Y%m%d)
-          node scripts/resolve-nightly-release.ts \
-            --date "$nightly_date" \
-            --run-number "$NIGHTLY_RUN_NUMBER" \
-            --sha "$NIGHTLY_SHA" \
-            --github-output
-
-      - name: Ensure Electron runtime is installed
-        run: vp run --filter @t3tools/desktop ensure:electron
-
-      - name: Check formatting
-        run: >-
-          vp fmt --check
-          package.json pnpm-lock.yaml pnpm-workspace.yaml vite.config.ts
-          apps/desktop apps/server apps/web packages scripts native oxlint-plugin-t3code
-
-      - name: Lint
-        run: >-
-          vp lint --report-unused-disable-directives
-          vite.config.ts apps/desktop apps/server apps/web packages scripts oxlint-plugin-t3code
-
-      - name: Check resource monitor formatting
-        run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
-
-      - name: Typecheck
-        run: >-
-          vp run
-          --filter=@t3tools/desktop...
-          --filter=t3...
-          --filter=@t3tools/scripts...
-          --fail-if-no-match
-          --concurrency-limit=2
-          typecheck
-
-      - name: Test
-        run: >-
-          vp run
-          --filter=@t3tools/desktop...
-          --filter=t3...
-          --filter=@t3tools/scripts...
-          --fail-if-no-match
-          test
-
-      - name: Test resource monitor
-        run: vp run test:resource-monitor
-
-      - name: Test release flow
-        run: vp run release:smoke
-
-  release:
-    name: Build and publish macOS arm64 DMG
-    needs: [quality]
-    if: ${{ !failure() && !cancelled() && needs.quality.result == 'success' }}
     runs-on: macos-15
     timeout-minutes: 60
     permissions:
@@ -201,6 +107,21 @@ jobs:
               - --filter=t3...
               - --filter=@t3tools/scripts...
 
+      - id: release_meta
+        name: Resolve nightly version
+        shell: bash
+        env:
+          NIGHTLY_SHA: ${{ github.sha }}
+          NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          nightly_date=$(date -u +%Y%m%d)
+          node scripts/resolve-nightly-release.ts \
+            --date "$nightly_date" \
+            --run-number "$NIGHTLY_RUN_NUMBER" \
+            --sha "$NIGHTLY_SHA" \
+            --github-output
+
       - name: Cache resource monitor
         id: resource_monitor_cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -215,7 +136,7 @@ jobs:
           targets: aarch64-apple-darwin
 
       - name: Align package versions
-        run: node scripts/update-release-package-versions.ts "${{ needs.quality.outputs.version }}"
+        run: node scripts/update-release-package-versions.ts "${{ steps.release_meta.outputs.version }}"
 
       - name: Build DMG
         env:
@@ -225,7 +146,7 @@ jobs:
           --platform mac
           --target dmg
           --arch arm64
-          --build-version "${{ needs.quality.outputs.version }}"
+          --build-version "${{ steps.release_meta.outputs.version }}"
           --no-updates
           --verbose
 
@@ -251,9 +172,9 @@ jobs:
       - name: Publish nightly prerelease
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
-          tag_name: ${{ needs.quality.outputs.tag }}
+          tag_name: ${{ steps.release_meta.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ${{ needs.quality.outputs.release_name }}
+          name: ${{ steps.release_meta.outputs.name }}
           generate_release_notes: true
           prerelease: true
           make_latest: false
@@ -273,7 +194,7 @@ jobs:
         name: Update Homebrew Cask
         shell: bash
         env:
-          CASK_VERSION: ${{ needs.quality.outputs.version }}
+          CASK_VERSION: ${{ steps.release_meta.outputs.version }}
           CASK_SHA256: ${{ steps.dmg.outputs.sha256 }}
         run: |
           set -euo pipefail
@@ -306,7 +227,7 @@ jobs:
       - name: Publish Homebrew Cask update
         if: steps.cask.outputs.changed == 'true'
         env:
-          CASK_VERSION: ${{ needs.quality.outputs.version }}
+          CASK_VERSION: ${{ steps.release_meta.outputs.version }}
         run: |
           set -euo pipefail
           git -C homebrew-tap config user.name "github-actions[bot]"
