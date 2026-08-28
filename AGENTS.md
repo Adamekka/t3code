@@ -8,7 +8,9 @@ You can think of T3 Code as an open source "bring-your-own-subscription" alterna
 
 This repository is a fork of T3 Code focused on first-class OpenCode support and a UI that makes agent activity easy to read. Fork-specific provider handling and tool presentation are product features, not incidental changes.
 
-Upstream rebases and merge conflicts are routine. When resolving them, preserve this fork's features and fixes over conflicting upstream behavior. Do not resolve a conflict by adapting fork tests to an upstream regression. Trace the intended user-visible behavior, keep the fork behavior working, and add or retain regression coverage for it.
+Upstream rebases and merge conflicts are routine. Before starting or continuing a rebase, read and follow [the rebase conflict protocol](docs/internals/rebase-conflicts.md). For CI or release conflicts, also read [the CI automation guide](docs/internals/ci.md) and [the release runbook](docs/operations/release.md). The protocol's maintainer decision gate is mandatory even when the correct resolution seems obvious.
+
+When resolving conflicts, preserve this fork's features and fixes over conflicting upstream behavior. Do not resolve a conflict by adapting fork tests to an upstream regression. Trace the intended user-visible behavior, keep the fork behavior working, and add or retain regression coverage for it.
 
 Keep tool activity individually readable in the timeline. Each tool call should retain its own row, label, and icon instead of being collapsed into a combined tool summary.
 
