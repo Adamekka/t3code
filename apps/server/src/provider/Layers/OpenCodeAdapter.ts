@@ -1544,15 +1544,17 @@ export function makeOpenCodeAdapter(
           { clearActiveTurnId: true, clearLastError: true },
         );
       }
+      // Orchestration settles persisted session state from terminal completions,
+      // so represent a successful user cancellation as an interrupted completion.
       yield* emit({
         ...(yield* buildEventBase({
           threadId: context.session.threadId,
           turnId,
           raw,
         })),
-        type: "turn.aborted",
+        type: "turn.completed",
         payload: {
-          reason: "Interrupted by user.",
+          state: "interrupted",
         },
       });
       if (cancellation) {
