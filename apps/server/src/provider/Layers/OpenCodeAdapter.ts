@@ -14,6 +14,7 @@ import {
   RuntimeRequestId,
   RuntimeTaskId,
   ThreadId,
+  TrimmedNonEmptyString,
   type ToolLifecycleItemType,
   TurnId,
   type UserInputQuestion,
@@ -219,6 +220,44 @@ const OpenCodeSessionStatusMap = Schema.Record(
 );
 const decodeOpenCodeSessionStatusMap = Schema.decodeUnknownOption(OpenCodeSessionStatusMap);
 
+const OpenCodeTodoList = Schema.Array(
+  Schema.Struct({
+    content: TrimmedNonEmptyString,
+    status: Schema.Literals(["pending", "in_progress", "completed", "cancelled"]),
+  }),
+);
+const decodeOpenCodeTodoList = Schema.decodeUnknownOption(OpenCodeTodoList);
+type OpenCodePlan = Extract<
+  ProviderRuntimeEvent,
+  { readonly type: "turn.plan.updated" }
+>["payload"]["plan"];
+
+function parseOpenCodePlan(input: unknown): OpenCodePlan | null {
+  const decoded = Option.getOrNull(decodeOpenCodeTodoList(input));
+  if (decoded === null) {
+    return null;
+  }
+
+  const plan: Array<OpenCodePlan[number]> = [];
+  for (const todo of decoded) {
+    // OpenCode retains cancelled todos in session state, but they are no longer
+    // plan work and the shared runtime contract has no cancelled step status.
+    if (todo.status === "cancelled") {
+      continue;
+    }
+    plan.push({
+      step: todo.content,
+      status:
+        todo.status === "pending"
+          ? "pending"
+          : todo.status === "in_progress"
+            ? "inProgress"
+            : "completed",
+    });
+  }
+  return plan;
+}
+
 interface OpenCodeCancellation {
   readonly turnId: TurnId | undefined;
   readonly completion: Deferred.Deferred<void, ProviderAdapterRequestError>;
@@ -395,6 +434,7 @@ interface OpenCodeSessionContext {
   readonly reportedChildToolCallIds: Set<string>;
   reconcilingTasks: boolean;
   readonly turns: Array<OpenCodeTurnSnapshot>;
+  lastEmittedPlan: { readonly turnId: TurnId | undefined; readonly plan: OpenCodePlan } | undefined;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
   activeVariant: string | undefined;
@@ -423,6 +463,27 @@ interface OpenCodeSessionContext {
    *   - tears down the OpenCode server process for scope-owned servers.
    */
   readonly sessionScope: Scope.Closeable;
+}
+
+function recordOpenCodePlan(
+  context: OpenCodeSessionContext,
+  turnId: TurnId | undefined,
+  plan: OpenCodePlan,
+): boolean {
+  const previous = context.lastEmittedPlan;
+  if (
+    previous !== undefined &&
+    previous.turnId === turnId &&
+    previous.plan.length === plan.length &&
+    plan.every(
+      (step, index) =>
+        step.step === previous.plan[index]?.step && step.status === previous.plan[index]?.status,
+    )
+  ) {
+    return false;
+  }
+  context.lastEmittedPlan = { turnId, plan };
+  return true;
 }
 
 export interface OpenCodeAdapterLiveOptions {
@@ -2178,6 +2239,22 @@ export function makeOpenCodeAdapter(
         }
       }
 
+      if (!owningActivation && part.tool.toLowerCase() === "todowrite") {
+        const plan = parseOpenCodePlan(part.state.input.todos);
+        if (plan !== null && recordOpenCodePlan(context, turnId, plan)) {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              createdAt: toolStateCreatedAt(part),
+              raw,
+            })),
+            type: "turn.plan.updated",
+            payload: { plan },
+          });
+        }
+      }
+
       if (!emitItem) {
         return;
       }
@@ -3183,6 +3260,7 @@ export function makeOpenCodeAdapter(
           reportedChildToolCallIds: new Set(),
           reconcilingTasks: false,
           turns: [],
+          lastEmittedPlan: undefined,
           activeTurnId: undefined,
           activeAgent: undefined,
           activeVariant: undefined,
@@ -3514,6 +3592,29 @@ export function makeOpenCodeAdapter(
                 ...(variant ? { effort: variant } : {}),
               },
             });
+
+            // Todo progress is ancillary; a failed or slow snapshot must not
+            // prevent OpenCode from receiving the user's prompt.
+            const todoResponse = yield* runOpenCodeSdk("session.todo", (signal) =>
+              context.client.session.todo({ sessionID: context.openCodeSessionId }, { signal }),
+            ).pipe(Effect.timeout("1 second"), Effect.option);
+            const plan = Option.isSome(todoResponse)
+              ? parseOpenCodePlan(todoResponse.value.data)
+              : null;
+            if (
+              plan !== null &&
+              plan.some((step) => step.status !== "completed") &&
+              !promptAdmission.cancelled &&
+              !(yield* Ref.get(context.stopped)) &&
+              sessions.get(input.threadId) === context &&
+              recordOpenCodePlan(context, turnId, plan)
+            ) {
+              yield* emit({
+                ...(yield* buildEventBase({ threadId: input.threadId, turnId })),
+                type: "turn.plan.updated",
+                payload: { plan },
+              });
+            }
           }
 
           if (promptAdmission.cancelled || (yield* Ref.get(context.stopped))) {

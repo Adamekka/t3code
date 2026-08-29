@@ -246,7 +246,7 @@ function JumpHintBadge(props: { label: string }) {
 }
 
 // Self-ticking so only this span re-renders each second, not the whole row.
-function WorkingDuration(props: { startedAt: string | null }) {
+function WorkingDuration(props: { startedAt: string | null; showSeparator: boolean }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -257,6 +257,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
   if (Number.isNaN(startedMs)) return null;
   return (
     <span className="font-mono tabular-nums">
+      {props.showSeparator ? "· " : ""}
       {formatWorkingDurationLabel(Date.now() - startedMs)}
     </span>
   );
@@ -333,6 +334,17 @@ function SidebarThreadTooltip({
             <div className="flex min-w-0 items-center gap-2">
               <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
               <div className="min-w-0 truncate text-foreground/75">{thread.branch}</div>
+            </div>
+          ) : null}
+          {thread.planProgress ? (
+            <div className="flex min-w-0 items-start gap-2 text-sky-600 dark:text-sky-400">
+              <CircleDashedIcon aria-hidden className="mt-0.5 size-3 shrink-0 stroke-current" />
+              <div className="min-w-0 flex-1 wrap-break-word leading-5">
+                <span className="font-mono tabular-nums">
+                  {thread.planProgress.completedSteps}/{thread.planProgress.totalSteps}
+                </span>{" "}
+                {thread.planProgress.step}
+              </div>
             </div>
           ) : null}
           {branchMismatch ? (
@@ -828,6 +840,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  const workingPlanProgress = status === "working" ? (thread.planProgress ?? null) : null;
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -1425,7 +1438,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             />
           }
         >
-          <div className="relative z-10 h-[4.875rem] px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+          <div
+            className={cn(
+              "relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
+              workingPlanProgress ? "h-24" : "h-[4.875rem]",
+            )}
+          >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               <ProjectFavicon
                 environmentId={thread.environmentId}
@@ -1499,10 +1517,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         {/* The label alone is the live region: a role="status"
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}
-                        <span role="status">{topStatus.label}</span>
+                        <span role="status">
+                          {topStatus.label}
+                          {workingPlanProgress
+                            ? ` ${workingPlanProgress.completedSteps}/${workingPlanProgress.totalSteps}`
+                            : ""}
+                        </span>
                         {status === "working" ? (
                           <span aria-hidden>
-                            <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                            <WorkingDuration
+                              startedAt={resolveWorkingStartedAt(thread)}
+                              showSeparator={workingPlanProgress !== null}
+                            />
                           </span>
                         ) : null}
                       </span>
@@ -1561,6 +1587,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               ) : null}
             </div>
+            {workingPlanProgress ? (
+              <div className="mt-0.5 flex min-w-0 items-center text-xs text-sky-600 dark:text-sky-400">
+                <span className="sr-only">Current step: </span>
+                <span className="min-w-0 flex-1 truncate whitespace-nowrap">
+                  {workingPlanProgress.step}
+                </span>
+              </div>
+            ) : null}
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
