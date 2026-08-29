@@ -82,6 +82,13 @@ const runtimeMock = {
     revertCalls: [] as Array<{ sessionID: string; messageID?: string }>,
     messageCalls: [] as Array<{ sessionID: string; messageID: string }>,
     messageFailures: 0,
+    todoCalls: [] as string[],
+    todos: [] as Array<{
+      content: string;
+      status: "pending" | "in_progress" | "completed" | "cancelled";
+      priority: "high" | "medium" | "low";
+    }>,
+    todoError: null as Error | null,
     promptCalls: [] as Array<unknown>,
     summarizeCalls: [] as Array<unknown>,
     promptAsyncError: null as Error | null,
@@ -144,6 +151,9 @@ const runtimeMock = {
     this.state.revertCalls.length = 0;
     this.state.messageCalls.length = 0;
     this.state.messageFailures = 0;
+    this.state.todoCalls.length = 0;
+    this.state.todos = [];
+    this.state.todoError = null;
     this.state.promptCalls.length = 0;
     this.state.summarizeCalls.length = 0;
     this.state.promptAsyncError = null;
@@ -313,6 +323,13 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
                 : {}),
             },
           };
+        },
+        todo: async ({ sessionID }: { sessionID: string }) => {
+          runtimeMock.state.todoCalls.push(sessionID);
+          if (runtimeMock.state.todoError) {
+            throw runtimeMock.state.todoError;
+          }
+          return { data: runtimeMock.state.todos };
         },
         promptAsync: async (input: unknown) => {
           runtimeMock.state.promptCalls.push(input);
@@ -6069,6 +6086,244 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("emits plan progress for OpenCode TodoWrite updates", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-todo-progress");
+      const input = {
+        todos: [
+          { content: "Trace the sidebar", status: "completed", priority: "high" },
+          { content: "Render progress", status: "in_progress", priority: "high" },
+          { content: "Run tests", status: "pending", priority: "medium" },
+        ],
+      };
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-todo-progress",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-todo-progress",
+              type: "tool",
+              callID: "call-todo-progress",
+              tool: "todowrite",
+              state: {
+                status: "running",
+                input,
+                title: "Update todos",
+                metadata: {},
+                time: { start: 1 },
+              },
+            },
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-todo-progress",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "msg-todo-progress",
+              type: "tool",
+              callID: "call-todo-progress",
+              tool: "todowrite",
+              state: {
+                status: "completed",
+                input,
+                output: "Todos updated",
+                title: "Update todos",
+                metadata: {},
+                time: { start: 1, end: 2 },
+              },
+            },
+          },
+        },
+      ];
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "turn.plan.updated" || event.type === "item.completed"),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      const planUpdated = events.find((event) => event.type === "turn.plan.updated");
+      NodeAssert.deepEqual(planUpdated?.payload, {
+        plan: [
+          { step: "Trace the sidebar", status: "completed" },
+          { step: "Render progress", status: "inProgress" },
+          { step: "Run tests", status: "pending" },
+        ],
+      });
+      NodeAssert.equal(
+        events.some((event) => event.type === "item.completed"),
+        true,
+      );
+    }),
+  );
+
+  it.effect("carries unfinished OpenCode todos into a fresh continuation turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-todo-continuation");
+      const busyEvent = promiseWithResolvers<unknown>();
+      const idleEvent = promiseWithResolvers<unknown>();
+      const continuationBusyEvent = promiseWithResolvers<unknown>();
+      const continuationIdleEvent = promiseWithResolvers<unknown>();
+      runtimeMock.state.todos = [
+        { content: "Inspect the question", status: "completed", priority: "high" },
+        { content: "Continue the fix", status: "in_progress", priority: "high" },
+        { content: "Discarded approach", status: "cancelled", priority: "low" },
+      ];
+      runtimeMock.state.subscribedEvents = [
+        busyEvent.promise,
+        idleEvent.promise,
+        continuationBusyEvent.promise,
+        continuationIdleEvent.promise,
+      ];
+      const firstCompletedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const firstTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "Start the work",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+      });
+      busyEvent.resolve({
+        id: "evt-todo-continuation-busy",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "busy" },
+        },
+      });
+      idleEvent.resolve({
+        id: "evt-todo-continuation-idle",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+      yield* Fiber.join(firstCompletedFiber).pipe(Effect.timeout("1 second"));
+
+      const continuationEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.turnId !== firstTurn.turnId &&
+            (event.type === "turn.started" || event.type === "turn.plan.updated"),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const continuationCompletedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.turnId !== firstTurn.turnId &&
+            event.type === "turn.completed",
+        ),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const continuationTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "Answer the question and continue",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+      });
+      const continuationEvents = Array.from(
+        yield* Fiber.join(continuationEventsFiber).pipe(Effect.timeout("1 second")),
+      );
+
+      NodeAssert.notEqual(continuationTurn.turnId, firstTurn.turnId);
+      NodeAssert.deepEqual(
+        continuationEvents.map((event) => event.type),
+        ["turn.started", "turn.plan.updated"],
+      );
+      const planUpdated = continuationEvents[1];
+      NodeAssert.ok(planUpdated?.type === "turn.plan.updated");
+      NodeAssert.equal(planUpdated.turnId, continuationTurn.turnId);
+      NodeAssert.deepEqual(planUpdated.payload.plan, [
+        { step: "Inspect the question", status: "completed" },
+        { step: "Continue the fix", status: "inProgress" },
+      ]);
+      NodeAssert.deepEqual(runtimeMock.state.todoCalls, [
+        "http://127.0.0.1:9999/session",
+        "http://127.0.0.1:9999/session",
+      ]);
+      continuationBusyEvent.resolve({
+        id: "evt-todo-continuation-second-busy",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "busy" },
+        },
+      });
+      continuationIdleEvent.resolve({
+        id: "evt-todo-continuation-second-idle",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+      yield* Fiber.join(continuationCompletedFiber).pipe(Effect.timeout("1 second"));
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("submits the OpenCode prompt when reading session todos fails", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-todo-read-failure");
+      runtimeMock.state.todoError = new Error("todo endpoint unavailable");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Continue without progress",
+        modelSelection: createModelSelection(ProviderInstanceId.make("opencode"), "openai/gpt-5"),
+      });
+
+      NodeAssert.equal(runtimeMock.state.todoCalls.length, 1);
+      NodeAssert.equal(runtimeMock.state.promptCalls.length, 1);
+      const promptCall = runtimeMock.state.promptCalls[0] as
+        | { readonly sessionID?: unknown }
+        | undefined;
+      NodeAssert.equal(promptCall?.sessionID, "http://127.0.0.1:9999/session");
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("exposes OpenCode bash commands separately from their output", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
@@ -6578,11 +6833,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
               messageID: "child-message",
               type: "tool",
               callID: "child-tool-call",
-              tool: "read",
+              tool: "todowrite",
               state: {
                 status: "running",
-                input: { filePath: "/workspace/file.ts" },
-                title: "Read file.ts",
+                input: {
+                  todos: [{ content: "Child task", status: "in_progress", priority: "high" }],
+                },
+                title: "Update child todos",
                 metadata: {},
                 time: { start: 2 },
               },
@@ -6599,6 +6856,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           (event) =>
             event.threadId === threadId &&
             (event.type === "task.started" ||
+              event.type === "turn.plan.updated" ||
               event.type === "tool.progress" ||
               event.type === "task.completed"),
         ),
