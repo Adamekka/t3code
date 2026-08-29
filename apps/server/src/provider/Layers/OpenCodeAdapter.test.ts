@@ -2102,7 +2102,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -2555,7 +2560,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         Stream.filter(
           (event) =>
             event.threadId === threadId &&
-            (event.type === "content.delta" || event.type === "turn.completed"),
+            (event.type === "content.delta" ||
+              (event.type === "turn.completed" && event.payload.state !== "interrupted")),
         ),
         Stream.take(2),
         Stream.runCollect,
@@ -2692,7 +2698,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -2916,7 +2927,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       runtimeMock.state.sessionStatusImplementation = async () => ({ data: {} });
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -3003,7 +3019,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -3099,7 +3120,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -4096,7 +4122,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         events
           .filter((event) => event.type === "turn.completed" || event.type === "turn.aborted")
           .map((event) => event.type),
-        ["turn.aborted"],
+        ["turn.completed"],
       );
       const sessions = yield* adapter.listSessions();
       const session = sessions.find((candidate) => candidate.threadId === threadId);
@@ -4165,7 +4191,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         events
           .filter((event) => event.type === "turn.completed" || event.type === "turn.aborted")
           .map((event) => event.type),
-        ["turn.aborted"],
+        ["turn.completed"],
       );
     }),
   );
@@ -4371,8 +4397,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
               event.type === "turn.aborted" ||
               event.type === "runtime.error",
           )
-          .map((event) => event.type),
-        ["turn.aborted"],
+          .map((event) =>
+            event.type === "turn.completed"
+              ? { type: event.type, state: event.payload.state }
+              : { type: event.type },
+          ),
+        [{ type: "turn.completed", state: "interrupted" }],
       );
 
       yield* adapter.stopSession(threadId);
@@ -4554,7 +4584,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         events
           .filter((event) => event.type === "turn.completed" || event.type === "turn.aborted")
           .map((event) => event.type),
-        ["turn.aborted"],
+        ["turn.completed"],
       );
 
       yield* adapter.stopSession(threadId);
@@ -4879,7 +4909,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -4959,7 +4994,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -5033,7 +5073,12 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       };
 
       const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            event.type === "turn.completed" &&
+            event.payload.state !== "interrupted",
+        ),
         Stream.runHead,
         Effect.forkChild,
       );
@@ -5306,7 +5351,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           )
           .map((event) => ({ type: event.type, turnId: event.turnId })),
         [
-          { type: "turn.aborted", turnId: firstTurn.turnId },
+          { type: "turn.completed", turnId: firstTurn.turnId },
           { type: "turn.completed", turnId: secondTurn.turnId },
         ],
       );
