@@ -2756,14 +2756,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     }
     setExpanded(next);
   };
+  const hasEditDiff = (workEntry.editDiff?.patch.trim().length ?? 0) > 0;
   const editRenderablePatch = useMemo(
     () =>
-      workEntry.editDiff
+      expanded && workEntry.editDiff
         ? getRenderablePatch(workEntry.editDiff.patch, `tool-edit:${workEntry.id}`, {
             compactPartialHunkOffsets: true,
           })
         : null,
-    [workEntry.editDiff?.patch, workEntry.id],
+    [expanded, workEntry.editDiff?.patch, workEntry.id],
   );
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2778,7 +2779,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const displayText =
     !toolPresentation && expanded && workEntry.command?.trim() ? "Command" : previewText;
   const canExpand =
-    editRenderablePatch !== null ||
+    hasEditDiff ||
     (workEntry.todoItems?.length ?? 0) > 0 ||
     (workEntry.searchMatches?.length ?? 0) > 0 ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
