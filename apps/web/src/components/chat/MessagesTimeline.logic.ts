@@ -3,7 +3,6 @@ import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-mark
 import {
   omitSupersededLifecycleMarkers,
   summarizeToolGroup,
-  toolGroupSummaryKind,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -14,7 +13,6 @@ export {
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
   formatDuration,
-  workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
   type TimelineEntry,
@@ -688,10 +686,7 @@ export function deriveMessagesTimelineRows(input: {
       );
       if (visibleGroupedEntries.length > 0) {
         const containsToolEntry = visibleGroupedEntries.some(workLogEntryIsToolLike);
-        const containsTodoEntry = visibleGroupedEntries.some(
-          (entry) => entry.todoItems !== undefined,
-        );
-        if (containsToolEntry && !containsTodoEntry) {
+        if (containsToolEntry) {
           for (const workEntry of visibleGroupedEntries) {
             nextRows.push({
               kind: "work",
@@ -743,8 +738,6 @@ export function deriveMessagesTimelineRows(input: {
           } else {
             const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
             const expanded = workGroupIsExpanded(groupId);
-            const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
-            const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
             nextRows.push({
               kind: "work-toggle",
               id: `work-toggle:${timelineEntry.id}`,
@@ -752,15 +745,10 @@ export function deriveMessagesTimelineRows(input: {
               groupId,
               hiddenCount: visibleGroupedEntries.length,
               expanded,
-              summary:
-                visibleGroupedEntries.length === 1 &&
-                !workLogEntryIsToolLike(visibleGroupedEntries[0]!)
-                  ? visibleGroupedEntries[0]!.label
-                  : summarizeToolGroup(visibleGroupedEntries),
-              summaryKind,
-              hasFailure:
-                latestToolEntry !== undefined &&
-                workEntryDisplayIndicatesToolFailure(latestToolEntry),
+              summary: summarizeToolGroup(visibleGroupedEntries),
+              summaryKind: "update",
+              // Tool and error rows return above or are split before grouping.
+              hasFailure: false,
             });
             if (expanded) {
               for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
