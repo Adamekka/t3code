@@ -807,7 +807,6 @@ export function deriveMessagesTimelineRows(input: {
           (entry) =>
             workLogEntryIsToolLike(entry) &&
             entry.agentSpawn === undefined &&
-            entry.todoItems === undefined &&
             entry.tone !== "error",
         );
         if (onlyToolEntries) {

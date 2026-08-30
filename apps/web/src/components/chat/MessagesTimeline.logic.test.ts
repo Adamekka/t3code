@@ -552,7 +552,6 @@ describe("deriveMessagesTimelineRows", () => {
       timelineEntries,
       expandToolCallsByDefault: true,
       isWorking: false,
-      activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
       revertTurnCountByUserMessageId: new Map(),
     });
@@ -563,7 +562,6 @@ describe("deriveMessagesTimelineRows", () => {
       collapsedTurnIds: new Set(["turn-1" as never]),
       expandToolCallsByDefault: true,
       isWorking: false,
-      activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
       revertTurnCountByUserMessageId: new Map(),
     });
@@ -1423,6 +1421,45 @@ describe("deriveMessagesTimelineRows", () => {
     expect(collapsedRows.every((row) => row.kind === "work")).toBe(true);
   });
 
+  it("keeps TodoWrite alongside another tool as its own row", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "entry-read",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "work-read",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Read",
+            tone: "tool",
+            itemType: "dynamic_tool_call",
+            changedFiles: ["/workspace/AGENTS.md"],
+          },
+        },
+        {
+          id: "entry-todo",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "work-todo",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "TodoWrite",
+            tone: "tool",
+            itemType: "dynamic_tool_call",
+            todoItems: [{ content: "Verify the rebase", status: "inProgress" }],
+          },
+        },
+      ],
+      isWorking: false,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["work-read", "work-todo"]);
+    expect(rows.every((row) => row.kind === "work")).toBe(true);
+  });
+
   it.each([
     ["Read", { changedFiles: ["/workspace/AGENTS.md"] }],
     ["Glob", { globPattern: "**/SKILL.md" }],
@@ -1446,7 +1483,6 @@ describe("deriveMessagesTimelineRows", () => {
         },
       ],
       isWorking: false,
-      activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
       revertTurnCountByUserMessageId: new Map(),
     });

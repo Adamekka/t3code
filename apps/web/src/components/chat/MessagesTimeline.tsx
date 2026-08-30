@@ -1331,10 +1331,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
         >
           <span className="flex h-5 w-6 shrink-0 items-center justify-center text-muted-foreground/65">
             <Chevron
-              className={cn(
-                "size-4 shrink-0",
-                expanded ? "-translate-x-0.5" : "-translate-x-1",
-              )}
+              className={cn("size-4 shrink-0", expanded ? "-translate-x-0.5" : "-translate-x-1")}
             />
           </span>
           {steps.length > 1 && steps.length <= 10 ? (
@@ -2641,14 +2638,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   const [expanded, setExpanded] = useState(false);
+  const hasEditDiff = (workEntry.editDiff?.patch.trim().length ?? 0) > 0;
   const editRenderablePatch = useMemo(
     () =>
-      workEntry.editDiff
+      expanded && workEntry.editDiff
         ? getRenderablePatch(workEntry.editDiff.patch, `tool-edit:${workEntry.id}`, {
             compactPartialHunkOffsets: true,
           })
         : null,
-    [workEntry.editDiff?.patch, workEntry.id],
+    [expanded, workEntry.editDiff?.patch, workEntry.id],
   );
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2658,11 +2656,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     showWarningIndicator || showFailedIndicator ? "x" : workEntryIconName(workEntry);
   const displayText = workEntryDisplayText(workEntry, workspaceRoot);
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand =
-    editRenderablePatch !== null || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
+  const canExpand = hasEditDiff || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
   const showDestructiveRowStyle =
-    showFailedIndicator &&
-    (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
+    showFailedIndicator && (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
@@ -2682,7 +2678,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : isToolLike
         ? "text-secondary-label"
         : "text-foreground/80";
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
+  const showEntryIcon =
+    isToolLike || !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
   const accessibleDisplayText = showFailedIndicator
     ? `${displayText}, tool call failed`
     : displayText;
