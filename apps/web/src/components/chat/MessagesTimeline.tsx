@@ -2574,14 +2574,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   const { threadRef, onImageExpand } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
+  const hasEditDiff = (workEntry.editDiff?.patch.trim().length ?? 0) > 0;
   const editRenderablePatch = useMemo(
     () =>
-      workEntry.editDiff
+      expanded && workEntry.editDiff
         ? getRenderablePatch(workEntry.editDiff.patch, `tool-edit:${workEntry.id}`, {
             compactPartialHunkOffsets: true,
           })
         : null,
-    [workEntry.editDiff?.patch, workEntry.id],
+    [expanded, workEntry.editDiff?.patch, workEntry.id],
   );
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2601,7 +2602,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : null;
   const hasStandardExpandedContent =
     viewedImage !== null || expandedBody !== null || (workEntry.todoItems?.length ?? 0) > 0;
-  const canExpand = editRenderablePatch !== null || hasStandardExpandedContent;
+  const canExpand = hasEditDiff || hasStandardExpandedContent;
   const showDestructiveRowStyle =
     showFailedIndicator && (workEntrySignalsSevereFailure(workEntry) || !isToolLike);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
@@ -2623,7 +2624,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : isToolLike
         ? "text-secondary-label"
         : "text-foreground/80";
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
+  const showEntryIcon =
+    isToolLike || !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
   const accessibleDisplayText = showFailedIndicator
     ? `${displayText}, tool call failed`
     : displayText;

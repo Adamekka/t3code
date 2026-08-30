@@ -1463,6 +1463,46 @@ describe("deriveMessagesTimelineRows", () => {
     expect(collapsedRows.every((row) => row.kind === "work")).toBe(true);
   });
 
+  it("keeps TodoWrite alongside another tool as its own row", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "entry-read",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "work-read",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Read",
+            tone: "tool",
+            itemType: "dynamic_tool_call",
+            changedFiles: ["/workspace/AGENTS.md"],
+          },
+        },
+        {
+          id: "entry-todo",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "work-todo",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "TodoWrite",
+            tone: "tool",
+            itemType: "dynamic_tool_call",
+            todoItems: [{ content: "Verify the rebase", status: "inProgress" }],
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["work-read", "work-todo"]);
+    expect(rows.every((row) => row.kind === "work")).toBe(true);
+  });
+
   it.each([
     ["Read", { changedFiles: ["/workspace/AGENTS.md"] }],
     ["Glob", { globPattern: "**/SKILL.md" }],
@@ -1539,46 +1579,45 @@ describe("deriveMessagesTimelineRows", () => {
     ["the final failure precedes an update", ["completed", "failed", "info"]],
     ["the final failure follows an update", ["failed", "info", "failed"]],
     ["the only failure follows an update", ["completed", "info", "failed"]],
-  ] as const)(
-    "keeps individual rows when %s",
-    (_, statuses) => {
-      const timelineEntries = statuses.map((status, index) => {
-        const id = `work-${index}`;
-        const createdAt = `2026-01-01T00:00:0${index}Z`;
+  ] as const)("keeps individual rows when %s", (_, statuses) => {
+    const timelineEntries = statuses.map((status, index) => {
+      const id = `work-${index}`;
+      const createdAt = `2026-01-01T00:00:0${index}Z`;
 
-        return {
-          id: `work-entry-${index}`,
-          kind: "work" as const,
-          createdAt,
-          entry:
-            status === "info"
-              ? { id, createdAt, label: "Status updated", tone: "info" as const }
-              : status === "error"
-                ? { id, createdAt, label: "Command failed", tone: "error" as const }
-                : {
-                    id,
-                    createdAt,
-                    label: "Ran command",
-                    tone: "tool" as const,
-                    toolLifecycleStatus: status,
-                  },
-        };
-      });
+      return {
+        id: `work-entry-${index}`,
+        kind: "work" as const,
+        createdAt,
+        entry:
+          status === "info"
+            ? { id, createdAt, label: "Status updated", tone: "info" as const }
+            : status === "error"
+              ? { id, createdAt, label: "Command failed", tone: "error" as const }
+              : {
+                  id,
+                  createdAt,
+                  label: "Ran command",
+                  tone: "tool" as const,
+                  toolLifecycleStatus: status,
+                },
+      };
+    });
 
-      const rows = deriveMessagesTimelineRows({
-        timelineEntries,
-        isWorking: false,
-        activeTurnStartedAt: null,
-        turnDiffSummaryByAssistantMessageId: new Map(),
-        revertTurnCountByUserMessageId: new Map(),
-      });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
 
-      expect(rows.map((row) => row.kind)).toEqual(["work", "work", "work"]);
-      expect(
-        rows.map((row) => (row.kind === "work" ? row.groupedEntries[0]?.id : null)),
-      ).toEqual(["work-0", "work-1", "work-2"]);
-    },
-  );
+    expect(rows.map((row) => row.kind)).toEqual(["work", "work", "work"]);
+    expect(rows.map((row) => (row.kind === "work" ? row.groupedEntries[0]?.id : null))).toEqual([
+      "work-0",
+      "work-1",
+      "work-2",
+    ]);
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {
