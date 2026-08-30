@@ -368,26 +368,6 @@ function omitSupersededLifecycleMarkers<T>(
   return reversedEntries.toReversed();
 }
 
-function toolGroupSummaryKind(entries: ReadonlyArray<WorkLogEntry>): ToolGroupSummaryKind {
-  const actions = new Set(entries.map(toolGroupAction));
-  if (actions.size !== 1) return "mixed";
-
-  const action = actions.values().next().value!;
-  if (action !== "other") return action;
-
-  const fallbackKinds = new Set(
-    entries.map((entry): ToolGroupSummaryKind => {
-      if (entry.itemType === "mcp_tool_call") return "other";
-      if (entry.itemType === "dynamic_tool_call") return "dynamic-tool";
-      if (entry.itemType === "collab_agent_tool_call" || entry.taskId) return "agent-tool";
-      if (entry.tone === "thinking") return "agent-tool";
-      if (entry.tone === "tool") return "tone-tool";
-      return "other";
-    }),
-  );
-  return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
-}
-
 function workGroupIdentity(timelineEntryId: string, entry: WorkLogEntry): string {
   return entry.toolCallId
     ? `tool:${entry.turnId ?? "no-turn"}:${entry.toolCallId}`
@@ -832,7 +812,6 @@ export function deriveMessagesTimelineRows(input: {
           (entry) =>
             workLogEntryIsToolLike(entry) &&
             entry.agentSpawn === undefined &&
-            entry.todoItems === undefined &&
             entry.tone !== "error",
         );
         if (onlyToolEntries) {
@@ -855,125 +834,63 @@ export function deriveMessagesTimelineRows(input: {
             isExpandedToolGroupEntry: false,
             isLastExpandedToolGroupEntry: false,
           });
+        } else if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
+          nextRows.push({
+            kind: "work",
+            id: timelineEntry.id,
+            createdAt: timelineEntry.createdAt,
+            groupedEntries: visibleGroupedEntries,
+            isExpandedToolGroupEntry: false,
+            isLastExpandedToolGroupEntry: false,
+          });
         } else {
-          const onlyToolEntries = visibleGroupedEntries.every(
-            (entry) =>
-              workLogEntryIsToolLike(entry) &&
-              entry.agentSpawn === undefined &&
-              entry.tone !== "error",
+          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
+          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          // Agent-spawn CTA rows are always visible: a running fleet must
+          // never hide behind a "+N tool calls" toggle. Selection is by
+          // membership (spawn OR recent-tail), preserving the group's
+          // chronological order in both collapsed and expanded states
+          // (review finding: concatenating two filtered lists moved a
+          // mid-group spawn row above earlier tool rows).
+          const overflowCandidates = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn === undefined,
           );
-          const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-          if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
-            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = workGroupIsExpanded(groupId);
-            const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
+          const hiddenEntries = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
+          const visibleEntries = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),
+          );
+          const renderedEntries = expanded ? visibleGroupedEntries : visibleEntries;
+
+          for (const workEntry of renderedEntries) {
             nextRows.push({
-              kind: "work-live",
-              id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
-              createdAt: timelineEntry.createdAt,
-              entry: latestActiveToolEntry,
-              groupedEntries: visibleGroupedEntries,
-              groupId,
-              expanded,
+              kind: "work",
+              id: workEntry.id,
+              createdAt: workEntry.createdAt,
+              groupedEntries: [workEntry],
+              isExpandedToolGroupEntry: false,
+              isLastExpandedToolGroupEntry: false,
             });
-            if (expanded) {
-              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-                nextRows.push({
-                  kind: "work",
-                  id: workEntry.id,
-                  createdAt: workEntry.createdAt,
-                  groupedEntries: [workEntry],
-                  isExpandedToolGroupEntry: true,
-                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-                });
-              }
-            }
-          } else if (onlyToolEntries) {
-            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = workGroupIsExpanded(groupId);
-            const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          }
+
+          if (hiddenEntries.length > 0) {
+            const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
+
             nextRows.push({
               kind: "work-toggle",
               id: `work-toggle:${timelineEntry.id}`,
               createdAt: timelineEntry.createdAt,
               groupId,
-              hiddenCount: visibleGroupedEntries.length,
+              hiddenCount: hiddenEntries.length,
               expanded,
-              onlyToolEntries: true,
-              summary: summarizeToolGroup(visibleGroupedEntries),
-              summaryKind,
-              hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
+              onlyToolEntries: hiddenEntries.every(workLogEntryIsToolLike),
+              summary: null,
+              summaryKind: null,
+              hasFailure:
+                latestToolEntry !== undefined &&
+                workEntryDisplayIndicatesToolFailure(latestToolEntry) &&
+                hiddenEntries.some(workEntryDisplayIndicatesToolFailure),
             });
-            if (expanded) {
-              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-                nextRows.push({
-                  kind: "work",
-                  id: workEntry.id,
-                  createdAt: workEntry.createdAt,
-                  groupedEntries: [workEntry],
-                  isExpandedToolGroupEntry: true,
-                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-                });
-              }
-            }
-          } else if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
-            nextRows.push({
-              kind: "work",
-              id: timelineEntry.id,
-              createdAt: timelineEntry.createdAt,
-              groupedEntries: visibleGroupedEntries,
-              isExpandedToolGroupEntry: false,
-              isLastExpandedToolGroupEntry: false,
-            });
-          } else {
-            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-            // Agent-spawn CTA rows are always visible: a running fleet must
-            // never hide behind a "+N tool calls" toggle. Selection is by
-            // membership (spawn OR recent-tail), preserving the group's
-            // chronological order in both collapsed and expanded states
-            // (review finding: concatenating two filtered lists moved a
-            // mid-group spawn row above earlier tool rows).
-            const overflowCandidates = visibleGroupedEntries.filter(
-              (entry) => entry.agentSpawn === undefined,
-            );
-            const hiddenEntries = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
-            const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
-            const visibleEntries = visibleGroupedEntries.filter(
-              (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),
-            );
-            const renderedEntries = expanded ? visibleGroupedEntries : visibleEntries;
-
-            for (const workEntry of renderedEntries) {
-              nextRows.push({
-                kind: "work",
-                id: workEntry.id,
-                createdAt: workEntry.createdAt,
-                groupedEntries: [workEntry],
-                isExpandedToolGroupEntry: false,
-                isLastExpandedToolGroupEntry: false,
-              });
-            }
-
-            if (hiddenEntries.length > 0) {
-              const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
-
-              nextRows.push({
-                kind: "work-toggle",
-                id: `work-toggle:${timelineEntry.id}`,
-                createdAt: timelineEntry.createdAt,
-                groupId,
-                hiddenCount: hiddenEntries.length,
-                expanded,
-                onlyToolEntries: hiddenEntries.every(workLogEntryIsToolLike),
-                summary: null,
-                summaryKind: null,
-                hasFailure:
-                  latestToolEntry !== undefined &&
-                  workEntryDisplayIndicatesToolFailure(latestToolEntry) &&
-                  hiddenEntries.some(workEntryDisplayIndicatesToolFailure),
-              });
-            }
           }
         }
       }
