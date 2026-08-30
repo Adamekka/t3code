@@ -48,13 +48,14 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
     return entry.skillName ? `${displayHeading} - ${entry.skillName}` : displayHeading;
   }
   if (entry.taskDescription !== undefined || entry.taskDetailIsMarkdown === true) {
-    return entry.taskDescription
-      ? `${displayHeading} - ${entry.taskDescription}`
-      : displayHeading;
+    return entry.taskDescription ? `${displayHeading} - ${entry.taskDescription}` : displayHeading;
   }
   if (entry.todoItems !== undefined) {
     const completed = entry.todoItems.filter((todo) => todo.status === "completed").length;
-    const progress = entry.todoItems.length === 0 ? "No todos" : `${completed}/${entry.todoItems.length} completed`;
+    const progress =
+      entry.todoItems.length === 0
+        ? "No todos"
+        : `${completed}/${entry.todoItems.length} completed`;
     return `Update todos - ${progress}`;
   }
   if (
@@ -951,7 +952,17 @@ export function deriveMessagesTimelineRows(input: {
             groupedEntries: [directEntry],
             isExpandedToolGroup: false,
           });
-        } else if (containsToolEntry && !containsTodoEntry) {
+        } else if (containsToolEntry && containsTodoEntry) {
+          for (const workEntry of visibleGroupedEntries) {
+            nextRows.push({
+              kind: "work",
+              id: workEntry.id,
+              createdAt: workEntry.createdAt,
+              groupedEntries: [workEntry],
+              isExpandedToolGroup: false,
+            });
+          }
+        } else if (containsToolEntry) {
           nextRows.push(
             expandedWorkGroupRow(
               workGroupId(timelineEntry.id, timelineEntry.entry),
