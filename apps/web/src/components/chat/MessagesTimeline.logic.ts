@@ -2,7 +2,6 @@ import * as Equal from "effect/Equal";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import {
   formatDuration,
-  workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
   type TimelineEntry,
@@ -359,26 +358,6 @@ function omitSupersededLifecycleMarkers<T>(
   }
 
   return reversedEntries.toReversed();
-}
-
-function toolGroupSummaryKind(entries: ReadonlyArray<WorkLogEntry>): ToolGroupSummaryKind {
-  const actions = new Set(entries.map(toolGroupAction));
-  if (actions.size !== 1) return "mixed";
-
-  const action = actions.values().next().value!;
-  if (action !== "other") return action;
-
-  const fallbackKinds = new Set(
-    entries.map((entry): ToolGroupSummaryKind => {
-      if (entry.itemType === "mcp_tool_call") return "other";
-      if (entry.itemType === "dynamic_tool_call") return "dynamic-tool";
-      if (entry.itemType === "collab_agent_tool_call" || entry.taskId) return "agent-tool";
-      if (entry.tone === "thinking") return "agent-tool";
-      if (entry.tone === "tool") return "tone-tool";
-      return "other";
-    }),
-  );
-  return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
 function workGroupIdentity(timelineEntryId: string, entry: WorkLogEntry): string {
@@ -829,10 +808,7 @@ export function deriveMessagesTimelineRows(input: {
       );
       if (visibleGroupedEntries.length > 0) {
         const containsToolEntry = visibleGroupedEntries.some(workLogEntryIsToolLike);
-        const containsTodoEntry = visibleGroupedEntries.some(
-          (entry) => entry.todoItems !== undefined,
-        );
-        if (containsToolEntry && !containsTodoEntry) {
+        if (containsToolEntry) {
           for (const workEntry of visibleGroupedEntries) {
             nextRows.push({
               kind: "work",
@@ -853,65 +829,30 @@ export function deriveMessagesTimelineRows(input: {
             isLastExpandedToolGroupEntry: false,
           });
         } else {
-          const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-          if (activeInProgressToolEntries.length > 0) {
-            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = workGroupIsExpanded(groupId);
-            const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
-            nextRows.push({
-              kind: "work-live",
-              id: `work-live:${workGroupIdentity(timelineEntry.id, timelineEntry.entry)}`,
-              createdAt: timelineEntry.createdAt,
-              entry: latestActiveToolEntry,
-              groupedEntries: visibleGroupedEntries,
-              groupId,
-              expanded,
-            });
-            if (expanded) {
-              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-                nextRows.push({
-                  kind: "work",
-                  id: workEntry.id,
-                  createdAt: workEntry.createdAt,
-                  groupedEntries: [workEntry],
-                  isExpandedToolGroupEntry: true,
-                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-                });
-              }
-            }
-          } else {
-            const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
-            const expanded = workGroupIsExpanded(groupId);
-            const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
-            const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
-            nextRows.push({
-              kind: "work-toggle",
-              id: `work-toggle:${timelineEntry.id}`,
-              createdAt: timelineEntry.createdAt,
-              groupId,
-              hiddenCount: visibleGroupedEntries.length,
-              expanded,
-              summary:
-                visibleGroupedEntries.length === 1 &&
-                !workLogEntryIsToolLike(visibleGroupedEntries[0]!)
-                  ? visibleGroupedEntries[0]!.label
-                  : summarizeToolGroup(visibleGroupedEntries),
-              summaryKind,
-              hasFailure:
-                latestToolEntry !== undefined &&
-                workEntryDisplayIndicatesToolFailure(latestToolEntry),
-            });
-            if (expanded) {
-              for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-                nextRows.push({
-                  kind: "work",
-                  id: workEntry.id,
-                  createdAt: workEntry.createdAt,
-                  groupedEntries: [workEntry],
-                  isExpandedToolGroupEntry: true,
-                  isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-                });
-              }
+          const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
+          const expanded = workGroupIsExpanded(groupId);
+          nextRows.push({
+            kind: "work-toggle",
+            id: `work-toggle:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            groupId,
+            hiddenCount: visibleGroupedEntries.length,
+            expanded,
+            summary: summarizeToolGroup(visibleGroupedEntries),
+            summaryKind: "update",
+            // Tool and error rows return above or are split before grouping.
+            hasFailure: false,
+          });
+          if (expanded) {
+            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
+              nextRows.push({
+                kind: "work",
+                id: workEntry.id,
+                createdAt: workEntry.createdAt,
+                groupedEntries: [workEntry],
+                isExpandedToolGroupEntry: true,
+                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
+              });
             }
           }
         }
