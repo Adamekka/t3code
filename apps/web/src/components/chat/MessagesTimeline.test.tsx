@@ -1639,7 +1639,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Run tests");
     expect(markup).toContain("Run lint");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).not.toContain("text-destructive");
     expect(markup).toContain('aria-label="Tool call failed"');
   });
