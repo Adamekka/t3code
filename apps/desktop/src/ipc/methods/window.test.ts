@@ -10,10 +10,12 @@ import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import {
   getLocalEnvironmentBootstraps,
   getWindowFullscreenState,
   pickProjectFavicon,
+  revealWindow,
 } from "./window.ts";
 
 const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
@@ -147,6 +149,23 @@ describe("getWindowFullscreenState", () => {
       Effect.provide(
         Layer.mock(ElectronWindow.ElectronWindow)({
           currentMainOrFirst: Effect.succeed(Option.some(window)),
+        }),
+      ),
+    );
+  });
+});
+
+describe("revealWindow", () => {
+  it.effect("activates the native desktop window", () => {
+    const activate = vi.fn(() => Effect.void);
+
+    return Effect.gen(function* () {
+      yield* revealWindow.handler(undefined);
+      assert.equal(activate.mock.calls.length, 1);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(DesktopWindow.DesktopWindow)({
+          activate: Effect.suspend(activate),
         }),
       ),
     );

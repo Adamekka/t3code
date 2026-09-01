@@ -499,6 +499,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(settings.systemNotificationsEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.systemNotificationsEnabled
+        ? ["System notifications"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -589,6 +593,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
+      settings.systemNotificationsEnabled,
       settings.timestampFormat,
       settings.wordWrap,
       followSystem,
@@ -669,6 +674,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      systemNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.systemNotificationsEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
@@ -1900,6 +1906,13 @@ function LegacyFeaturesSection() {
 export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const [systemNotificationPermission, setSystemNotificationPermission] = useState<
+    NotificationPermission | "unsupported"
+  >(() =>
+    typeof window !== "undefined" && "Notification" in window
+      ? window.Notification.permission
+      : "unsupported",
+  );
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1952,6 +1965,16 @@ export function GeneralSettingsPanel() {
     DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
   );
 
+  useEffect(() => {
+    const syncPermission = () => {
+      setSystemNotificationPermission(
+        "Notification" in window ? window.Notification.permission : "unsupported",
+      );
+    };
+    window.addEventListener("focus", syncPermission);
+    return () => window.removeEventListener("focus", syncPermission);
+  }, []);
+
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
@@ -1987,6 +2010,92 @@ export function GeneralSettingsPanel() {
                 });
               }}
               aria-label="Project grouping"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("system-notifications")}
+          description={
+            systemNotificationPermission === "unsupported"
+              ? "System notifications are not supported by this browser."
+              : systemNotificationPermission === "denied"
+                ? "Notifications are blocked. Allow them in your browser or system settings."
+                : "Get an alert when an agent finishes, fails, stops, or asks a question."
+          }
+          resetAction={
+            settings.systemNotificationsEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.systemNotificationsEnabled ? (
+              <SettingResetButton
+                label="system notifications"
+                onClick={() =>
+                  updateSettings({
+                    systemNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.systemNotificationsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={
+                settings.systemNotificationsEnabled && systemNotificationPermission === "granted"
+              }
+              onCheckedChange={(checked) => {
+                if (!checked) {
+                  updateSettings({ systemNotificationsEnabled: false });
+                  return;
+                }
+                if (systemNotificationPermission === "unsupported") {
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "warning",
+                      title: "System notifications aren't supported",
+                      description: "Use a browser or desktop client that supports notifications.",
+                    }),
+                  );
+                  return;
+                }
+                if (systemNotificationPermission === "denied") {
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "warning",
+                      title: "Notifications are blocked",
+                      description: "Allow notifications in your browser or system settings.",
+                    }),
+                  );
+                  return;
+                }
+                void window.Notification.requestPermission()
+                  .then((permission) => {
+                    setSystemNotificationPermission(permission);
+                    if (permission === "granted") {
+                      updateSettings({ systemNotificationsEnabled: true });
+                      return;
+                    }
+                    toastManager.add(
+                      stackedThreadToast({
+                        type: "warning",
+                        title: "Notifications weren't enabled",
+                        description:
+                          permission === "denied"
+                            ? "Allow notifications in your browser or system settings."
+                            : "Choose Allow when your browser asks for notification permission.",
+                      }),
+                    );
+                  })
+                  .catch((error: unknown) => {
+                    console.error("Could not request notification permission.", error);
+                    toastManager.add(
+                      stackedThreadToast({
+                        type: "error",
+                        title: "Couldn't request notification permission",
+                        description: "Try again.",
+                      }),
+                    );
+                  });
+              }}
+              aria-label="System notifications"
             />
           }
         />

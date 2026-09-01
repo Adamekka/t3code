@@ -151,6 +151,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
+    id: "system-notifications",
+    title: "System notifications",
+    to: "/settings/general",
+    searchTerms: ["browser desktop alerts agent finished failed stopped question input"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",

@@ -1158,6 +1158,8 @@ export interface DesktopBridge {
    * desktop builds never emit it.
    */
   onQuitShortcut?: (listener: (state: "down" | "up") => void) => () => void;
+  /** Optional while older desktop shells can host a newer web client. */
+  revealWindow?: () => Promise<void>;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
@@ -1274,6 +1276,7 @@ export interface LocalApi {
   };
   shell: {
     openExternal: (url: string) => Promise<void>;
+    revealWindow: () => Promise<void>;
   };
   contextMenu: {
     show: <T extends string>(

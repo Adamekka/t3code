@@ -33,6 +33,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -82,6 +83,16 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
+  }),
+});
+
+export const revealWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.REVEAL_WINDOW_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.revealWindow")(function* () {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    yield* desktopWindow.activate;
   }),
 });
 

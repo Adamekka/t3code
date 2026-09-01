@@ -83,6 +83,7 @@ describe("searchSettings", () => {
   it("finds settings that used to be reachable only through their section", () => {
     expect(searchSettings("pull request template")[0]?.id).toBe("follow-change-request-templates");
     expect(searchSettings("git security keys")[0]?.id).toBe("git-fetch-interval");
+    expect(searchSettings("agent finished alert")[0]?.id).toBe("system-notifications");
     expect(searchSettings("push notifications")[0]?.id).toBe("publish-agent-activity");
     expect(searchSettings("battery saver")[0]?.id).toBe("background-activity");
     expect(searchSettings("binary path")[0]?.id).toBe("providers");

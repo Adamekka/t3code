@@ -98,6 +98,16 @@ describe("ClientSettings tool call expansion", () => {
   });
 });
 
+describe("ClientSettings system notifications", () => {
+  it("defaults notifications off and accepts an explicit opt-in", () => {
+    expect(decodeClientSettings({}).systemNotificationsEnabled).toBe(false);
+    expect(
+      decodeClientSettingsPatch({ systemNotificationsEnabled: true }).systemNotificationsEnabled,
+    ).toBe(true);
+    expect(() => decodeClientSettingsPatch({ systemNotificationsEnabled: "yes" })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

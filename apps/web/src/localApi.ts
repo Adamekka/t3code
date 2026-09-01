@@ -30,6 +30,13 @@ function createBrowserLocalApi(): LocalApi {
 
         window.open(url, "_blank", "noopener,noreferrer");
       },
+      revealWindow: async () => {
+        if (window.desktopBridge?.revealWindow) {
+          await window.desktopBridge.revealWindow();
+          return;
+        }
+        window.focus();
+      },
     },
     contextMenu: {
       show: async <T extends string>(

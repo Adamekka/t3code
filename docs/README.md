@@ -5,6 +5,7 @@
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)
+- [Agent notifications](./user/notifications.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Track agent todos](./user/todos.md)
 - [Review usage](./user/usage.md)
