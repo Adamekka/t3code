@@ -68,6 +68,9 @@ const runtimeMock = {
     sessionCreateInputs: [] as Array<Record<string, unknown>>,
     createdSessionIds: [] as string[],
     authHeaders: [] as Array<string | null>,
+    connectionPasswords: [] as Array<string | undefined>,
+    sdkClientPasswords: [] as Array<string | undefined>,
+    effectiveServerPassword: null as string | null,
     abortCalls: [] as string[],
     abortSignals: [] as AbortSignal[],
     abortImplementation: null as
@@ -141,6 +144,9 @@ const runtimeMock = {
     this.state.sessionCreateInputs.length = 0;
     this.state.createdSessionIds.length = 0;
     this.state.authHeaders.length = 0;
+    this.state.connectionPasswords.length = 0;
+    this.state.sdkClientPasswords.length = 0;
+    this.state.effectiveServerPassword = null;
     this.state.abortCalls.length = 0;
     this.state.abortSignals.length = 0;
     this.state.abortImplementation = null;
@@ -223,6 +229,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   connectToOpenCodeServer: ({ serverUrl, serverPassword }) =>
     Effect.gen(function* () {
       const url = serverUrl ?? "http://127.0.0.1:4301";
+      runtimeMock.state.connectionPasswords.push(serverPassword);
       // Always register a finalizer so the closeCalls/closeError probes fire;
       // production attaches none for external servers.
       yield* Effect.addFinalizer(() =>
@@ -236,14 +243,19 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       return {
         url,
         version: "1.15.13",
-        ...(serverPassword ? { serverPassword } : {}),
+        ...(runtimeMock.state.effectiveServerPassword
+          ? { serverPassword: runtimeMock.state.effectiveServerPassword }
+          : serverPassword
+            ? { serverPassword }
+            : {}),
         exitCode: null,
         external: Boolean(serverUrl),
       };
     }),
   runOpenCodeCommand: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
-  createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
-    ({
+  createOpenCodeSdkClient: ({ baseUrl, serverPassword }) => {
+    runtimeMock.state.sdkClientPasswords.push(serverPassword);
+    return {
       session: {
         create: async (input: Record<string, unknown>) => {
           runtimeMock.state.sessionCreateUrls.push(baseUrl);
@@ -464,7 +476,8 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
           runtimeMock.state.questionReplyCalls.push({ requestID, answers });
         },
       },
-    }) as unknown as ReturnType<OpenCodeRuntimeShape["createOpenCodeSdkClient"]>,
+    } as unknown as ReturnType<OpenCodeRuntimeShape["createOpenCodeSdkClient"]>;
+  },
   loadOpenCodeInventory: () =>
     runtimeMock.state.inventoryError
       ? Effect.fail(runtimeMock.state.inventoryError)
@@ -1186,6 +1199,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       const adapter = yield* OpenCodeAdapter;
       const threadId = asThreadId("thread-opencode-inactive-transcript");
       const taskId = RuntimeTaskId.make("inactive-child");
+      runtimeMock.state.effectiveServerPassword = "effective-password";
       runtimeMock.state.sessionParentById.set(taskId, "inactive-parent");
       runtimeMock.state.messagesBySessionId.set(taskId, [
         {
@@ -1208,6 +1222,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.equal(page.messages[0]?.id, "inactive-message");
       NodeAssert.deepEqual(runtimeMock.state.sessionCreateInputs, []);
       NodeAssert.deepEqual(runtimeMock.state.sessionUpdateCalls, []);
+      NodeAssert.deepEqual(runtimeMock.state.connectionPasswords, ["secret-password"]);
+      NodeAssert.deepEqual(runtimeMock.state.sdkClientPasswords, ["effective-password"]);
       NodeAssert.deepEqual(runtimeMock.state.closeCalls, ["http://127.0.0.1:9999"]);
     }),
   );

@@ -4304,13 +4304,16 @@ export function makeOpenCodeAdapter(
             binaryPath: openCodeSettings.binaryPath,
             directory: input.cwd,
             serverUrl: openCodeSettings.serverUrl,
+            ...(openCodeSettings.serverPassword !== undefined
+              ? { serverPassword: openCodeSettings.serverPassword }
+              : {}),
             ...(options?.environment ? { environment: options.environment } : {}),
           });
           const client = openCodeRuntime.createOpenCodeSdkClient({
             baseUrl: server.url,
             directory: input.cwd,
-            ...(server.external && openCodeSettings.serverPassword
-              ? { serverPassword: openCodeSettings.serverPassword }
+            ...(server.serverPassword !== undefined
+              ? { serverPassword: server.serverPassword }
               : {}),
           });
           return yield* readFromClient(client);
