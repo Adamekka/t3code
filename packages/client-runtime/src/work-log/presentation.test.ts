@@ -333,7 +333,7 @@ describe("workEntryViewedImagePath", () => {
     expect(
       workEntryViewedImagePath({ ...entry, itemType: "image_view", detail: "a.png\nb.png" }),
     ).toBeNull();
-    expect(workEntryViewedImagePath({ ...entry, detail: "a.png" })).toBe("a.png");
+    expect(workEntryViewedImagePath({ ...entry, detail: "a.png" })).toBeNull();
     expect(workEntryViewedImagePath({ ...entry, label: "Tool call", detail: "a.png" })).toBeNull();
   });
 });
